@@ -1,0 +1,775 @@
+// ============================================================
+// SOCIETYOS — PRISMA DATABASE SCHEMA
+// PostgreSQL via Supabase
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================
+// ENUMS — Fixed value sets
+// ============================================================
+
+enum UserRole {
+  RESIDENT
+  SECRETARY
+  TREASURER
+  PRESIDENT
+  ADMIN
+
+  @@map("user_role")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+
+  @@map("user_status")
+}
+
+enum FlatStatus {
+  OCCUPIED
+  VACANT
+  UNDER_RENOVATION
+
+  @@map("flat_status")
+}
+
+enum BillStatus {
+  PENDING
+  PAID
+  OVERDUE
+  PARTIALLY_PAID
+  WAIVED
+
+  @@map("bill_status")
+}
+
+enum PaymentMethod {
+  UPI
+  BANK_TRANSFER
+  CASH
+  CHEQUE
+  ONLINE
+
+  @@map("payment_method")
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  REFUNDED
+
+  @@map("payment_status")
+}
+
+enum ComplaintStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  REJECTED
+
+  @@map("complaint_status")
+}
+
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+
+  @@map("complaint_priority")
+}
+
+enum ComplaintCategory {
+  PLUMBING
+  ELECTRICAL
+  CLEANING
+  SECURITY
+  LIFT
+  PARKING
+  NOISE
+  INTERNET
+  GAS
+  OTHER
+
+  @@map("complaint_category")
+}
+
+enum ExpenseCategory {
+  MAINTENANCE
+  SECURITY
+  CLEANING
+  ELECTRICITY
+  WATER
+  LIFT
+  GARDEN
+  INSURANCE
+  LEGAL
+  ADMINISTRATIVE
+  EMERGENCY
+  OTHER
+
+  @@map("expense_category")
+}
+
+enum ExpenseStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  PAID
+
+  @@map("expense_status")
+}
+
+enum PollStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+  CANCELLED
+
+  @@map("poll_status")
+}
+
+enum NoticeCategory {
+  GENERAL
+  MAINTENANCE
+  MEETING
+  EMERGENCY
+  FINANCIAL
+  LEGAL
+  EVENT
+
+  @@map("notice_category")
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  REJECTED
+
+  @@map("booking_status")
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  APPROVE
+  REJECT
+
+  @@map("audit_action")
+}
+
+enum VisitorStatus {
+  ACTIVE
+  EXPIRED
+  USED
+  CANCELLED
+
+  @@map("visitor_status")
+}
+
+// ============================================================
+// TABLE 1: SOCIETIES
+// The root tenant table — everything belongs to a society
+// ============================================================
+
+model Society {
+  id              String    @id @default(uuid()) @db.Uuid
+  name            String    @db.VarChar(200)
+  registration_no String?   @unique @db.VarChar(100)
+  address         String    @db.Text
+  city            String    @db.VarChar(100)
+  state           String    @db.VarChar(100)
+  pincode         String    @db.VarChar(10)
+  total_flats     Int       @default(0)
+  total_floors    Int       @default(0)
+  total_wings     Int       @default(1)
+  contact_email   String    @db.VarChar(255)
+  contact_phone   String    @db.VarChar(20)
+  logo_url        String?   @db.Text
+  is_active       Boolean   @default(true)
+  created_at      DateTime  @default(now()) @db.Timestamptz
+  updated_at      DateTime  @updatedAt @db.Timestamptz
+
+  // Relations
+  users        User[]
+  flats        Flat[]
+  bills        Bill[]
+  expenses     Expense[]
+  complaints   Complaint[]
+  polls        Poll[]
+  notices      Notice[]
+  amenities    Amenity[]
+  bookings     Booking[]
+  visitors     Visitor[]
+  audit_logs   AuditLog[]
+
+  @@index([is_active])
+  @@map("societies")
+}
+
+// ============================================================
+// TABLE 2: USERS
+// All people who use the system
+// ============================================================
+
+model User {
+  id            String      @id @default(uuid()) @db.Uuid
+  society_id    String      @db.Uuid
+  flat_id       String?     @db.Uuid
+  email         String      @db.VarChar(255)
+  phone         String?     @db.VarChar(20)
+  full_name     String      @db.VarChar(200)
+  avatar_url    String?     @db.Text
+  role          UserRole    @default(RESIDENT)
+  status        UserStatus  @default(PENDING_VERIFICATION)
+  is_owner      Boolean     @default(true)
+  move_in_date  DateTime?   @db.Date
+  move_out_date DateTime?   @db.Date
+  last_login_at DateTime?   @db.Timestamptz
+  deleted_at    DateTime?   @db.Timestamptz
+  created_at    DateTime    @default(now()) @db.Timestamptz
+  updated_at    DateTime    @updatedAt @db.Timestamptz
+
+  // Relations
+  society             Society        @relation(fields: [society_id], references: [id])
+  flat                Flat?          @relation(fields: [flat_id], references: [id])
+  bills               Bill[]
+  payments            Payment[]
+  complaints_raised   Complaint[]    @relation("ComplaintRaisedBy")
+  complaints_assigned Complaint[]    @relation("ComplaintAssignedTo")
+  expenses            Expense[]
+  votes               Vote[]
+  notices_created     Notice[]
+  notice_views        NoticeView[]
+  bookings            Booking[]
+  refresh_tokens      RefreshToken[]
+  audit_logs          AuditLog[]
+
+  // A user can only have ONE active account per society
+  @@unique([society_id, email])
+  @@index([society_id])
+  @@index([email])
+  @@index([society_id, role])
+  @@index([society_id, status])
+  @@index([flat_id])
+  @@map("users")
+}
+
+// ============================================================
+// TABLE 3: FLATS
+// Individual units in the society
+// ============================================================
+
+model Flat {
+  id              String     @id @default(uuid()) @db.Uuid
+  society_id      String     @db.Uuid
+  flat_number     String     @db.VarChar(20)
+  floor           Int
+  wing            String?    @db.VarChar(10)
+  area_sqft       Decimal?   @db.Decimal(8, 2)
+  bedrooms        Int?
+  status          FlatStatus @default(OCCUPIED)
+  monthly_amount  Decimal    @db.Decimal(10, 2)
+  is_commercial   Boolean    @default(false)
+  deleted_at      DateTime?  @db.Timestamptz
+  created_at      DateTime   @default(now()) @db.Timestamptz
+  updated_at      DateTime   @updatedAt @db.Timestamptz
+
+  // Relations
+  society  Society @relation(fields: [society_id], references: [id])
+  users    User[]
+  bills    Bill[]
+
+  // Flat number must be unique within a society
+  @@unique([society_id, flat_number])
+  @@index([society_id])
+  @@index([society_id, status])
+  @@index([society_id, wing])
+  @@map("flats")
+}
+
+// ============================================================
+// TABLE 4: BILLS
+// Monthly maintenance bills generated for each flat
+// ============================================================
+
+model Bill {
+  id               String     @id @default(uuid()) @db.Uuid
+  society_id       String     @db.Uuid
+  flat_id          String     @db.Uuid
+  user_id          String     @db.Uuid
+  bill_number      String     @db.VarChar(50)
+  billing_month    Int
+  billing_year     Int
+  amount           Decimal    @db.Decimal(10, 2)
+  late_fee         Decimal    @default(0) @db.Decimal(10, 2)
+  discount         Decimal    @default(0) @db.Decimal(10, 2)
+  total_amount     Decimal    @db.Decimal(10, 2)
+  amount_paid      Decimal    @default(0) @db.Decimal(10, 2)
+  status           BillStatus @default(PENDING)
+  due_date         DateTime   @db.Date
+  paid_at          DateTime?  @db.Timestamptz
+  notes            String?    @db.Text
+  upi_link         String?    @db.Text
+  deleted_at       DateTime?  @db.Timestamptz
+  created_at       DateTime   @default(now()) @db.Timestamptz
+  updated_at       DateTime   @updatedAt @db.Timestamptz
+
+  // Relations
+  society  Society   @relation(fields: [society_id], references: [id])
+  flat     Flat      @relation(fields: [flat_id], references: [id])
+  user     User      @relation(fields: [user_id], references: [id])
+  payments Payment[]
+
+  // One bill per flat per month per year
+  @@unique([society_id, flat_id, billing_month, billing_year])
+  @@unique([bill_number])
+  @@index([society_id])
+  @@index([society_id, status])
+  @@index([society_id, due_date])
+  @@index([flat_id])
+  @@index([user_id])
+  @@index([billing_month, billing_year])
+  @@map("bills")
+}
+
+// ============================================================
+// TABLE 5: PAYMENTS
+// Records of actual payments made against bills
+// ============================================================
+
+model Payment {
+  id                 String        @id @default(uuid()) @db.Uuid
+  society_id         String        @db.Uuid
+  bill_id            String        @db.Uuid
+  user_id            String        @db.Uuid
+  amount             Decimal       @db.Decimal(10, 2)
+  payment_method     PaymentMethod
+  payment_status     PaymentStatus @default(PENDING)
+  transaction_id     String?       @db.VarChar(255)
+  upi_ref_number     String?       @db.VarChar(255)
+  payment_screenshot String?       @db.Text
+  payment_date       DateTime      @db.Date
+  confirmed_at       DateTime?     @db.Timestamptz
+  confirmed_by       String?       @db.Uuid
+  rejection_reason   String?       @db.Text
+  notes              String?       @db.Text
+  created_at         DateTime      @default(now()) @db.Timestamptz
+  updated_at         DateTime      @updatedAt @db.Timestamptz
+
+  // Relations
+  bill Bill @relation(fields: [bill_id], references: [id])
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([society_id])
+  @@index([bill_id])
+  @@index([user_id])
+  @@index([payment_status])
+  @@index([payment_date])
+  @@index([transaction_id])
+  @@map("payments")
+}
+
+// ============================================================
+// TABLE 6: EXPENSES
+// Society fund expenditures — transparent ledger
+// ============================================================
+
+model Expense {
+  id               String          @id @default(uuid()) @db.Uuid
+  society_id       String          @db.Uuid
+  category         ExpenseCategory
+  title            String          @db.VarChar(300)
+  description      String?         @db.Text
+  amount           Decimal         @db.Decimal(10, 2)
+  expense_date     DateTime        @db.Date
+  vendor_name      String?         @db.VarChar(200)
+  vendor_contact   String?         @db.VarChar(100)
+  receipt_url      String?         @db.Text
+  status           ExpenseStatus   @default(PENDING_APPROVAL)
+  added_by         String          @db.Uuid
+  approved_by      String?         @db.Uuid
+  approved_at      DateTime?       @db.Timestamptz
+  rejection_reason String?         @db.Text
+  deleted_at       DateTime?       @db.Timestamptz
+  created_at       DateTime        @default(now()) @db.Timestamptz
+  updated_at       DateTime        @updatedAt @db.Timestamptz
+
+  // Relations
+  society      Society @relation(fields: [society_id], references: [id])
+  added_by_user User   @relation(fields: [added_by], references: [id])
+
+  @@index([society_id])
+  @@index([society_id, status])
+  @@index([society_id, category])
+  @@index([society_id, expense_date])
+  @@index([added_by])
+  @@map("expenses")
+}
+
+// ============================================================
+// TABLE 7: COMPLAINTS
+// Resident issues with full status tracking
+// ============================================================
+
+model Complaint {
+  id               String            @id @default(uuid()) @db.Uuid
+  society_id       String            @db.Uuid
+  raised_by        String            @db.Uuid
+  assigned_to      String?           @db.Uuid
+  complaint_number String            @db.VarChar(50)
+  category         ComplaintCategory
+  priority         ComplaintPriority @default(MEDIUM)
+  title            String            @db.VarChar(300)
+  description      String            @db.Text
+  status           ComplaintStatus   @default(OPEN)
+  image_urls       String[]
+  location         String?           @db.VarChar(200)
+  expected_by      DateTime?         @db.Date
+  resolved_at      DateTime?         @db.Timestamptz
+  resolution_notes String?           @db.Text
+  sla_breached     Boolean           @default(false)
+  deleted_at       DateTime?         @db.Timestamptz
+  created_at       DateTime          @default(now()) @db.Timestamptz
+  updated_at       DateTime          @updatedAt @db.Timestamptz
+
+  // Relations
+  society         Society            @relation(fields: [society_id], references: [id])
+  raised_by_user  User               @relation("ComplaintRaisedBy", fields: [raised_by], references: [id])
+  assigned_to_user User?             @relation("ComplaintAssignedTo", fields: [assigned_to], references: [id])
+  updates         ComplaintUpdate[]
+
+  @@unique([complaint_number])
+  @@index([society_id])
+  @@index([society_id, status])
+  @@index([society_id, priority])
+  @@index([society_id, category])
+  @@index([raised_by])
+  @@index([assigned_to])
+  @@map("complaints")
+}
+
+// ============================================================
+// TABLE 7B: COMPLAINT UPDATES
+// History of status changes on complaints
+// ============================================================
+
+model ComplaintUpdate {
+  id           String          @id @default(uuid()) @db.Uuid
+  complaint_id String          @db.Uuid
+  updated_by   String          @db.Uuid
+  old_status   ComplaintStatus
+  new_status   ComplaintStatus
+  note         String?         @db.Text
+  created_at   DateTime        @default(now()) @db.Timestamptz
+
+  complaint Complaint @relation(fields: [complaint_id], references: [id])
+
+  @@index([complaint_id])
+  @@map("complaint_updates")
+}
+
+// ============================================================
+// TABLE 8: POLLS
+// Voting polls created by committee
+// ============================================================
+
+model Poll {
+  id           String     @id @default(uuid()) @db.Uuid
+  society_id   String     @db.Uuid
+  created_by   String     @db.Uuid
+  title        String     @db.VarChar(300)
+  description  String?    @db.Text
+  is_anonymous Boolean    @default(false)
+  status       PollStatus @default(DRAFT)
+  starts_at    DateTime   @db.Timestamptz
+  ends_at      DateTime   @db.Timestamptz
+  deleted_at   DateTime?  @db.Timestamptz
+  created_at   DateTime   @default(now()) @db.Timestamptz
+  updated_at   DateTime   @updatedAt @db.Timestamptz
+
+  // Relations
+  society Society      @relation(fields: [society_id], references: [id])
+  options PollOption[]
+  votes   Vote[]
+
+  @@index([society_id])
+  @@index([society_id, status])
+  @@index([ends_at])
+  @@map("polls")
+}
+
+// ============================================================
+// TABLE 8B: POLL OPTIONS
+// Choices available in each poll
+// ============================================================
+
+model PollOption {
+  id         String   @id @default(uuid()) @db.Uuid
+  poll_id    String   @db.Uuid
+  option_text String  @db.VarChar(300)
+  vote_count  Int     @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  poll  Poll   @relation(fields: [poll_id], references: [id])
+  votes Vote[]
+
+  @@index([poll_id])
+  @@map("poll_options")
+}
+
+// ============================================================
+// TABLE 8C: VOTES
+// Individual vote records (tamper-evident)
+// ============================================================
+
+model Vote {
+  id           String   @id @default(uuid()) @db.Uuid
+  society_id   String   @db.Uuid
+  poll_id      String   @db.Uuid
+  option_id    String   @db.Uuid
+  user_id      String   @db.Uuid
+  flat_id      String   @db.Uuid
+  vote_hash    String   @db.VarChar(64)
+  voted_at     DateTime @default(now()) @db.Timestamptz
+
+  poll   Poll       @relation(fields: [poll_id], references: [id])
+  option PollOption @relation(fields: [option_id], references: [id])
+  user   User       @relation(fields: [user_id], references: [id])
+
+  // One vote per flat per poll (one-flat-one-vote rule)
+  @@unique([poll_id, flat_id])
+  @@index([poll_id])
+  @@index([user_id])
+  @@map("votes")
+}
+
+// ============================================================
+// TABLE 9: NOTICES
+// Society announcements and communications
+// ============================================================
+
+model Notice {
+  id           String         @id @default(uuid()) @db.Uuid
+  society_id   String         @db.Uuid
+  created_by   String         @db.Uuid
+  title        String         @db.VarChar(300)
+  content      String         @db.Text
+  category     NoticeCategory @default(GENERAL)
+  is_pinned    Boolean        @default(false)
+  is_urgent    Boolean        @default(false)
+  attachment_url String?      @db.Text
+  expires_at   DateTime?      @db.Timestamptz
+  deleted_at   DateTime?      @db.Timestamptz
+  created_at   DateTime       @default(now()) @db.Timestamptz
+  updated_at   DateTime       @updatedAt @db.Timestamptz
+
+  // Relations
+  society Society      @relation(fields: [society_id], references: [id])
+  author  User         @relation(fields: [created_by], references: [id])
+  views   NoticeView[]
+
+  @@index([society_id])
+  @@index([society_id, category])
+  @@index([society_id, is_pinned])
+  @@index([created_at])
+  @@map("notices")
+}
+
+// ============================================================
+// TABLE 9B: NOTICE VIEWS
+// Track who has read each notice
+// ============================================================
+
+model NoticeView {
+  id         String   @id @default(uuid()) @db.Uuid
+  notice_id  String   @db.Uuid
+  user_id    String   @db.Uuid
+  viewed_at  DateTime @default(now()) @db.Timestamptz
+
+  notice Notice @relation(fields: [notice_id], references: [id])
+  user   User   @relation(fields: [user_id], references: [id])
+
+  @@unique([notice_id, user_id])
+  @@index([notice_id])
+  @@index([user_id])
+  @@map("notice_views")
+}
+
+// ============================================================
+// TABLE 10: AMENITIES
+// Society facilities that can be booked
+// ============================================================
+
+model Amenity {
+  id                String    @id @default(uuid()) @db.Uuid
+  society_id        String    @db.Uuid
+  name              String    @db.VarChar(200)
+  description       String?   @db.Text
+  capacity          Int?
+  location          String?   @db.VarChar(200)
+  image_url         String?   @db.Text
+  booking_price     Decimal   @default(0) @db.Decimal(8, 2)
+  slot_duration_min Int       @default(60)
+  open_time         String    @db.VarChar(5)
+  close_time        String    @db.VarChar(5)
+  is_active         Boolean   @default(true)
+  requires_approval Boolean   @default(false)
+  advance_days      Int       @default(7)
+  deleted_at        DateTime? @db.Timestamptz
+  created_at        DateTime  @default(now()) @db.Timestamptz
+  updated_at        DateTime  @updatedAt @db.Timestamptz
+
+  // Relations
+  society  Society   @relation(fields: [society_id], references: [id])
+  bookings Booking[]
+
+  @@index([society_id])
+  @@index([society_id, is_active])
+  @@map("amenities")
+}
+
+// ============================================================
+// TABLE 10B: BOOKINGS
+// Amenity reservation records
+// ============================================================
+
+model Booking {
+  id              String        @id @default(uuid()) @db.Uuid
+  society_id      String        @db.Uuid
+  amenity_id      String        @db.Uuid
+  user_id         String        @db.Uuid
+  booking_date    DateTime      @db.Date
+  start_time      String        @db.VarChar(5)
+  end_time        String        @db.VarChar(5)
+  status          BookingStatus @default(PENDING)
+  purpose         String?       @db.VarChar(300)
+  attendees       Int?
+  amount_charged  Decimal       @default(0) @db.Decimal(8, 2)
+  approved_by     String?       @db.Uuid
+  approved_at     DateTime?     @db.Timestamptz
+  cancelled_at    DateTime?     @db.Timestamptz
+  cancel_reason   String?       @db.Text
+  created_at      DateTime      @default(now()) @db.Timestamptz
+  updated_at      DateTime      @updatedAt @db.Timestamptz
+
+  // Relations
+  society  Society @relation(fields: [society_id], references: [id])
+  amenity  Amenity @relation(fields: [amenity_id], references: [id])
+  user     User    @relation(fields: [user_id], references: [id])
+
+  // Prevent double booking same slot
+  @@unique([amenity_id, booking_date, start_time])
+  @@index([society_id])
+  @@index([amenity_id, booking_date])
+  @@index([user_id])
+  @@index([status])
+  @@map("bookings")
+}
+
+// ============================================================
+// TABLE 11: VISITORS
+// Guest management with OTP pass system
+// ============================================================
+
+model Visitor {
+  id            String        @id @default(uuid()) @db.Uuid
+  society_id    String        @db.Uuid
+  host_user_id  String        @db.Uuid
+  visitor_name  String        @db.VarChar(200)
+  visitor_phone String        @db.VarChar(20)
+  purpose       String?       @db.VarChar(300)
+  otp_code      String        @db.VarChar(10)
+  otp_hash      String        @db.VarChar(64)
+  status        VisitorStatus @default(ACTIVE)
+  valid_from    DateTime      @db.Timestamptz
+  valid_until   DateTime      @db.Timestamptz
+  checked_in_at DateTime?     @db.Timestamptz
+  checked_out_at DateTime?    @db.Timestamptz
+  guard_notes   String?       @db.Text
+  created_at    DateTime      @default(now()) @db.Timestamptz
+  updated_at    DateTime      @updatedAt @db.Timestamptz
+
+  society Society @relation(fields: [society_id], references: [id])
+
+  @@index([society_id])
+  @@index([otp_code])
+  @@index([status])
+  @@index([valid_until])
+  @@map("visitors")
+}
+
+// ============================================================
+// TABLE 12: REFRESH TOKENS
+// JWT refresh token storage for secure auth
+// ============================================================
+
+model RefreshToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  user_id     String    @db.Uuid
+  token_hash  String    @unique @db.VarChar(64)
+  device_info String?   @db.VarChar(500)
+  ip_address  String?   @db.VarChar(50)
+  is_revoked  Boolean   @default(false)
+  expires_at  DateTime  @db.Timestamptz
+  created_at  DateTime  @default(now()) @db.Timestamptz
+
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([token_hash])
+  @@index([expires_at])
+  @@map("refresh_tokens")
+}
+
+// ============================================================
+// TABLE 13: AUDIT LOGS
+// Immutable record of ALL system actions
+// ============================================================
+
+model AuditLog {
+  id           String      @id @default(uuid()) @db.Uuid
+  society_id   String?     @db.Uuid
+  user_id      String?     @db.Uuid
+  action       AuditAction
+  resource     String      @db.VarChar(100)
+  resource_id  String?     @db.VarChar(100)
+  old_values   Json?
+  new_values   Json?
+  ip_address   String?     @db.VarChar(50)
+  user_agent   String?     @db.Text
+  status       String      @default("SUCCESS") @db.VarChar(20)
+  error_message String?    @db.Text
+  created_at   DateTime    @default(now()) @db.Timestamptz
+
+  society Society? @relation(fields: [society_id], references: [id])
+  user    User?    @relation(fields: [user_id], references: [id])
+
+  @@index([society_id])
+  @@index([user_id])
+  @@index([action])
+  @@index([resource])
+  @@index([created_at])
+  @@map("audit_logs")
+}
