@@ -24,6 +24,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Shield } from "lucide-react";
 
 // Navigation items per role
 const residentNav = [
@@ -31,6 +32,8 @@ const residentNav = [
   { href: "/resident/bills", icon: CreditCard, label: "My Bills" },
   { href: "/resident/complaints", icon: MessageSquare, label: "Complaints" },
   { href: "/resident/notices", icon: Bell, label: "Notices" },
+  { href: "/resident/polls", icon: Vote, label: "Polls" },
+  { href: "/resident/visitors", icon: Users, label: "Visitors" },
   { href: "/resident/bookings", icon: Calendar, label: "Bookings" },
 ];
 
@@ -42,6 +45,7 @@ const committeeNav = [
   { href: "/committee/members", icon: Users, label: "Members" },
   { href: "/committee/notices", icon: Bell, label: "Notices" },
   { href: "/committee/polls", icon: Vote, label: "Polls" },
+  { href: "/committee/security", icon: Shield, label: "Security" },
 ];
 
 export default function DashboardLayout({
