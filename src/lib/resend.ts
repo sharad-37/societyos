@@ -1,9 +1,4 @@
 // src/lib/resend.ts
-// ============================================================
-// RESEND EMAIL SERVICE
-// Sends OTP emails and notifications
-// ============================================================
-
 import { Resend } from "resend";
 
 export const resend = new Resend(process.env.RESEND_API_KEY!);
@@ -11,32 +6,55 @@ export const resend = new Resend(process.env.RESEND_API_KEY!);
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || "SocietyOS";
 
-// ─── Send OTP Email ──────────────────────────────────────────
+// ─── Email Override ───────────────────────────────────────────
+// Handles Resend free tier restriction
+// Free tier can ONLY send to your verified email
+// This redirects ALL emails to your real email
+function getActualRecipient(intendedEmail: string): string {
+  const override =
+    process.env.RESEND_TO_OVERRIDE || process.env.DEV_EMAIL_OVERRIDE;
+
+  if (override) {
+    console.log(`📧 Email redirect: ${intendedEmail} → ${override}`);
+    return override;
+  }
+
+  return intendedEmail;
+}
+
+// ─── Send OTP Email ───────────────────────────────────────────
 export async function sendOTPEmail(
   email: string,
   otp: string,
   userName?: string,
 ): Promise<boolean> {
   try {
-    const { error } = await resend.emails.send({
+    const recipient = getActualRecipient(email);
+
+    console.log(`📧 Sending OTP to: ${recipient}`);
+    console.log(`🔑 OTP Code: ${otp}`);
+
+    const { data, error } = await resend.emails.send({
       from: `${APP_NAME} <${FROM_EMAIL}>`,
-      to: [email],
+      to: [recipient],
       subject: `${otp} — Your SocietyOS Login Code`,
-      html: generateOTPEmailHTML(otp, userName),
+      html: generateOTPEmailHTML(otp, userName, email, recipient),
     });
 
     if (error) {
-      console.error("Resend error:", error);
+      console.error("❌ Resend error:", JSON.stringify(error, null, 2));
       return false;
     }
+
+    console.log("✅ Email sent. ID:", data?.id);
     return true;
   } catch (err) {
-    console.error("Email send failed:", err);
+    console.error("❌ Email exception:", err);
     return false;
   }
 }
 
-// ─── Send Bill Notification ──────────────────────────────────
+// ─── Send Bill Notification ───────────────────────────────────
 export async function sendBillNotificationEmail(
   email: string,
   data: {
@@ -48,21 +66,54 @@ export async function sendBillNotificationEmail(
   },
 ): Promise<boolean> {
   try {
+    const recipient = getActualRecipient(email);
+
     const { error } = await resend.emails.send({
       from: `${APP_NAME} <${FROM_EMAIL}>`,
-      to: [email],
+      to: [recipient],
       subject: `Maintenance Bill ${data.billNumber} — ₹${data.amount} Due`,
       html: generateBillEmailHTML(data),
     });
-    return !error;
+
+    if (error) {
+      console.error("Bill email error:", error);
+      return false;
+    }
+
+    return true;
   } catch {
     return false;
   }
 }
 
-// ─── Email Templates ─────────────────────────────────────────
+// ─── OTP Email Template ───────────────────────────────────────
+function generateOTPEmailHTML(
+  otp: string,
+  userName?: string,
+  originalEmail?: string,
+  actualRecipient?: string,
+): string {
+  const isRedirected =
+    originalEmail && actualRecipient && originalEmail !== actualRecipient;
 
-function generateOTPEmailHTML(otp: string, userName?: string): string {
+  const redirectBanner = isRedirected
+    ? `
+    <div style="
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      font-size: 12px;
+      color: #92400e;
+    ">
+      <strong>📬 Demo Notice:</strong>
+      OTP requested by <strong>${originalEmail}</strong>
+      — redirected here for testing.
+    </div>
+  `
+    : "";
+
   return `
     <!DOCTYPE html>
     <html>
@@ -70,53 +121,148 @@ function generateOTPEmailHTML(otp: string, userName?: string): string {
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
     </head>
-    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                 background: #f4f4f5; margin: 0; padding: 20px;">
-      <div style="max-width: 480px; margin: 0 auto; background: white;
-                  border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+    <body style="
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+      'Segoe UI', sans-serif;
+      background: #f5f5f7;
+      margin: 0;
+      padding: 24px;
+    ">
+      <div style="
+        max-width: 460px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      ">
 
         <!-- Header -->
-        <div style="background: #18181b; padding: 32px; text-align: center;">
-          <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 700;">
-            🏢 SocietyOS
+        <div style="
+          background: #1c1c1e;
+          padding: 32px;
+          text-align: center;
+        ">
+          <div style="
+            width: 56px; height: 56px;
+            background: #0071e3;
+            border-radius: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+          ">
+            <span style="font-size: 28px;">🏢</span>
+          </div>
+          <h1 style="
+            color: white;
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+          ">
+            SocietyOS
           </h1>
-          <p style="color: #a1a1aa; margin: 8px 0 0; font-size: 14px;">
+          <p style="
+            color: #8e8e93;
+            margin: 6px 0 0;
+            font-size: 13px;
+          ">
             Housing Society Management
           </p>
         </div>
 
         <!-- Body -->
-        <div style="padding: 40px 32px;">
-          <p style="color: #3f3f46; font-size: 16px; margin: 0 0 24px;">
-            Hello ${userName || "there"},
+        <div style="padding: 32px;">
+
+          ${redirectBanner}
+
+          <p style="
+            color: #1c1c1e;
+            font-size: 16px;
+            margin: 0 0 6px;
+            font-weight: 500;
+          ">
+            Hello ${userName || "there"} 👋
           </p>
-          <p style="color: #52525b; font-size: 15px; margin: 0 0 32px; line-height: 1.6;">
-            Your one-time login code for SocietyOS is:
+
+          <p style="
+            color: #6e6e73;
+            font-size: 14px;
+            margin: 0 0 28px;
+            line-height: 1.5;
+          ">
+            Your one-time login code for SocietyOS:
           </p>
 
           <!-- OTP Box -->
-          <div style="background: #f4f4f5; border-radius: 12px;
-                      padding: 24px; text-align: center; margin: 0 0 32px;">
-            <span style="font-size: 42px; font-weight: 800; letter-spacing: 12px;
-                         color: #18181b; font-family: monospace;">
+          <div style="
+            background: #f5f5f7;
+            border-radius: 16px;
+            padding: 28px 24px;
+            text-align: center;
+            margin: 0 0 28px;
+          ">
+            <span style="
+              font-size: 44px;
+              font-weight: 800;
+              letter-spacing: 14px;
+              color: #1c1c1e;
+              font-family: 'SF Mono', 'Courier New', monospace;
+              text-indent: 14px;
+              display: inline-block;
+            ">
               ${otp}
             </span>
           </div>
 
-          <p style="color: #71717a; font-size: 13px; margin: 0 0 8px;">
-            ⏱ This code expires in <strong>10 minutes</strong>
-          </p>
-          <p style="color: #71717a; font-size: 13px; margin: 0;">
-            🔐 Never share this code with anyone.
-               SocietyOS will never ask for your OTP.
-          </p>
+          <!-- Info -->
+          <div style="space-y: 8px;">
+            <div style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              background: #f0fdf4;
+              border-radius: 10px;
+              padding: 10px 14px;
+              margin-bottom: 8px;
+            ">
+              <span>⏱</span>
+              <p style="color: #166534; font-size: 13px; margin: 0;">
+                Expires in <strong>10 minutes</strong>
+              </p>
+            </div>
+            <div style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              background: #fff7ed;
+              border-radius: 10px;
+              padding: 10px 14px;
+            ">
+              <span>🔐</span>
+              <p style="color: #9a3412; font-size: 13px; margin: 0;">
+                Never share this code with anyone
+              </p>
+            </div>
+          </div>
+
         </div>
 
         <!-- Footer -->
-        <div style="border-top: 1px solid #e4e4e7; padding: 20px 32px;
-                    background: #fafafa;">
-          <p style="color: #a1a1aa; font-size: 12px; margin: 0; text-align: center;">
-            If you didn't request this code, please ignore this email.
+        <div style="
+          border-top: 1px solid #e5e5ea;
+          padding: 16px 32px;
+          background: #fafafa;
+          text-align: center;
+        ">
+          <p style="
+            color: #8e8e93;
+            font-size: 11px;
+            margin: 0;
+            line-height: 1.5;
+          ">
+            If you didn't request this, ignore this email.
             <br>© 2024 SocietyOS. All rights reserved.
           </p>
         </div>
@@ -127,6 +273,7 @@ function generateOTPEmailHTML(otp: string, userName?: string): string {
   `;
 }
 
+// ─── Bill Email Template ──────────────────────────────────────
 function generateBillEmailHTML(data: {
   userName: string;
   flatNumber: string;
@@ -137,36 +284,58 @@ function generateBillEmailHTML(data: {
   return `
     <!DOCTYPE html>
     <html>
-    <body style="font-family: sans-serif; background: #f4f4f5;
-                 margin: 0; padding: 20px;">
-      <div style="max-width: 480px; margin: 0 auto; background: white;
-                  border-radius: 12px; padding: 32px;">
-        <h2 style="color: #18181b;">🏢 Maintenance Bill Generated</h2>
-        <p>Hello ${data.userName},</p>
-        <p>Your maintenance bill has been generated.</p>
-        <table style="width: 100%; border-collapse: collapse;">
-          <tr>
-            <td style="padding: 8px 0; color: #71717a;">Bill Number</td>
-            <td style="padding: 8px 0; font-weight: 600;">${data.billNumber}</td>
-          </tr>
-          <tr>
-            <td style="padding: 8px 0; color: #71717a;">Flat</td>
-            <td style="padding: 8px 0; font-weight: 600;">${data.flatNumber}</td>
-          </tr>
-          <tr>
-            <td style="padding: 8px 0; color: #71717a;">Amount</td>
-            <td style="padding: 8px 0; font-weight: 600; color: #dc2626;">
-              ₹${data.amount.toLocaleString("en-IN")}
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 8px 0; color: #71717a;">Due Date</td>
-            <td style="padding: 8px 0; font-weight: 600;">${data.dueDate}</td>
-          </tr>
-        </table>
-        <p style="color: #71717a; font-size: 13px; margin-top: 24px;">
-          Please pay before the due date to avoid late fees.
-        </p>
+    <body style="
+      font-family: -apple-system, sans-serif;
+      background: #f5f5f7;
+      margin: 0; padding: 24px;
+    ">
+      <div style="
+        max-width: 460px; margin: 0 auto;
+        background: white; border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      ">
+        <div style="background: #1c1c1e; padding: 28px 32px;">
+          <h1 style="color: white; margin: 0; font-size: 18px; font-weight: 700;">
+            🏢 Maintenance Bill
+          </h1>
+        </div>
+        <div style="padding: 32px;">
+          <p style="color: #1c1c1e; margin: 0 0 16px; font-size: 15px;">
+            Hello ${data.userName},
+          </p>
+          <p style="color: #6e6e73; margin: 0 0 24px; font-size: 14px;">
+            Your maintenance bill has been generated.
+          </p>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr style="border-bottom: 1px solid #f2f2f7;">
+              <td style="padding: 12px 0; color: #6e6e73; font-size: 14px;">Bill Number</td>
+              <td style="padding: 12px 0; font-weight: 600; text-align: right; font-size: 14px;">${data.billNumber}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f2f2f7;">
+              <td style="padding: 12px 0; color: #6e6e73; font-size: 14px;">Flat</td>
+              <td style="padding: 12px 0; font-weight: 600; text-align: right; font-size: 14px;">${data.flatNumber}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f2f2f7;">
+              <td style="padding: 12px 0; color: #6e6e73; font-size: 14px;">Amount Due</td>
+              <td style="padding: 12px 0; font-weight: 700; text-align: right; font-size: 20px; color: #ff3b30;">
+                ₹${data.amount.toLocaleString("en-IN")}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 12px 0; color: #6e6e73; font-size: 14px;">Due Date</td>
+              <td style="padding: 12px 0; font-weight: 600; text-align: right; font-size: 14px;">${data.dueDate}</td>
+            </tr>
+          </table>
+          <div style="
+            margin-top: 24px; background: #fff7ed;
+            border-radius: 12px; padding: 14px;
+          ">
+            <p style="color: #9a3412; font-size: 13px; margin: 0;">
+              ⚠️ Late payments incur a 2% late fee after the due date.
+            </p>
+          </div>
+        </div>
       </div>
     </body>
     </html>

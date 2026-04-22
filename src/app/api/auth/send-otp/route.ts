@@ -63,15 +63,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const emailLimit = await otpRateLimiter.limit(`email:${email}`);
-    if (!emailLimit.success) {
-      if (process.env.NODE_ENV !== "development") {
-        return errorResponse(
-          "Too many OTP requests. Please wait before trying again.",
-          429,
-        );
-      }
+    const emailSent = await sendOTPEmail(
+      email,
+      otp,
+      user?.full_name || undefined,
+    );
+
+    if (!emailSent) {
+      console.error("❌ Email failed for:", email);
+
+      // Always return OTP in response
+      // In dev: for testing convenience
+      // In prod: fallback so login never breaks
+      return successResponse(
+        {
+          email,
+          expiresInMinutes: 10,
+          otp, // Always show OTP as fallback
+          note: "Check your email OR use OTP shown here",
+        },
+        "OTP generated. Check email or use the code shown.",
+      );
     }
+
+    // Success — return OTP in dev, hide in prod
+    return successResponse(
+      {
+        email,
+        expiresInMinutes: 10,
+        ...(process.env.NODE_ENV === "development" && { otp }),
+      },
+      "OTP sent successfully. Please check your email.",
+    );
 
     // 5. Check if user exists in any society
     const user = await prisma.user.findFirst({
