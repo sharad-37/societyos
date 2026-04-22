@@ -4,15 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev --turbopack",
-    "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next build",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "postinstall": "prisma generate",
+    "type-check": "tsc --noEmit",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset",
-    "type-check": "tsc --noEmit"
+    "db:reset": "prisma migrate reset"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

@@ -1,10 +1,5 @@
 // prisma/seed.ts
-// ============================================================
-// SEED FILE — Creates sample data for development
-// Run with: npx prisma db seed
-// ============================================================
-
-import { FlatStatus, PrismaClient, UserRole } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -12,8 +7,10 @@ async function main() {
   console.log("🌱 Starting database seed...");
 
   // ─── 1. Create Society ──────────────────────────────────
-  const society = await prisma.society.create({
-    data: {
+  const society = await prisma.society.upsert({
+    where: { registration_no: "MH/MUM/HSG/2010/001" },
+    update: {},
+    create: {
       name: "Sunshine Apartments CHS",
       registration_no: "MH/MUM/HSG/2010/001",
       address: "123, Sunshine Road, Andheri West",
@@ -25,28 +22,65 @@ async function main() {
       total_wings: 3,
       contact_email: "secretary@sunshineapts.com",
       contact_phone: "9876543210",
+      is_active: true,
     },
   });
-  console.log(`✅ Society created: ${society.name} (${society.id})`);
+  console.log(`✅ Society: ${society.name}`);
 
   // ─── 2. Create Flats ────────────────────────────────────
   const flatData = [
-    { flat_number: "A-101", floor: 1, wing: "A", monthly_amount: 2500 },
-    { flat_number: "A-102", floor: 1, wing: "A", monthly_amount: 2500 },
-    { flat_number: "B-201", floor: 2, wing: "B", monthly_amount: 3000 },
-    { flat_number: "B-202", floor: 2, wing: "B", monthly_amount: 3000 },
-    { flat_number: "C-301", floor: 3, wing: "C", monthly_amount: 3500 },
+    {
+      flat_number: "A-101",
+      floor: 1,
+      wing: "A",
+      monthly_amount: 2500,
+    },
+    {
+      flat_number: "A-102",
+      floor: 1,
+      wing: "A",
+      monthly_amount: 2500,
+    },
+    {
+      flat_number: "B-201",
+      floor: 2,
+      wing: "B",
+      monthly_amount: 3000,
+    },
+    {
+      flat_number: "B-202",
+      floor: 2,
+      wing: "B",
+      monthly_amount: 3000,
+    },
+    {
+      flat_number: "C-301",
+      floor: 3,
+      wing: "C",
+      monthly_amount: 3500,
+    },
   ];
 
   const flats = await Promise.all(
     flatData.map((flat) =>
-      prisma.flat.create({
-        data: {
+      prisma.flat.upsert({
+        where: {
+          society_id_flat_number: {
+            society_id: society.id,
+            flat_number: flat.flat_number,
+          },
+        },
+        update: {},
+        create: {
           society_id: society.id,
-          ...flat,
+          flat_number: flat.flat_number,
+          floor: flat.floor,
+          wing: flat.wing,
           area_sqft: 850,
           bedrooms: 2,
-          status: FlatStatus.OCCUPIED,
+          status: "OCCUPIED",
+          monthly_amount: flat.monthly_amount,
+          is_commercial: false,
         },
       }),
     ),
@@ -54,158 +88,147 @@ async function main() {
   console.log(`✅ ${flats.length} flats created`);
 
   // ─── 3. Create Users ────────────────────────────────────
-  const users = await Promise.all([
-    // President
-    prisma.user.create({
-      data: {
-        society_id: society.id,
-        flat_id: flats[0].id,
-        email: "president@sunshineapts.com",
-        phone: "9876543001",
-        full_name: "Ramesh Sharma",
-        role: UserRole.PRESIDENT,
-        status: "ACTIVE",
-        is_owner: true,
-      },
-    }),
-    // Secretary
-    prisma.user.create({
-      data: {
-        society_id: society.id,
-        flat_id: flats[1].id,
-        email: "secretary@sunshineapts.com",
-        phone: "9876543002",
-        full_name: "Priya Mehta",
-        role: UserRole.SECRETARY,
-        status: "ACTIVE",
-        is_owner: true,
-      },
-    }),
-    // Treasurer
-    prisma.user.create({
-      data: {
-        society_id: society.id,
-        flat_id: flats[2].id,
-        email: "treasurer@sunshineapts.com",
-        phone: "9876543003",
-        full_name: "Suresh Patel",
-        role: UserRole.TREASURER,
-        status: "ACTIVE",
-        is_owner: true,
-      },
-    }),
-    // Residents
-    prisma.user.create({
-      data: {
-        society_id: society.id,
-        flat_id: flats[3].id,
-        email: "resident1@gmail.com",
-        phone: "9876543004",
-        full_name: "Anita Joshi",
-        role: UserRole.RESIDENT,
-        status: "ACTIVE",
-        is_owner: false,
-      },
-    }),
-    prisma.user.create({
-      data: {
-        society_id: society.id,
-        flat_id: flats[4].id,
-        email: "sharad@gmail.com",
-        phone: "9876543005",
-        full_name: "Sharad Manani",
-        role: UserRole.RESIDENT,
-        status: "ACTIVE",
-        is_owner: true,
-      },
-    }),
-  ]);
-  console.log(`✅ ${users.length} users created`);
+  const userData = [
+    {
+      flatIndex: 0,
+      email: "president@sunshineapts.com",
+      phone: "9876543001",
+      full_name: "Ramesh Sharma",
+      role: "PRESIDENT" as const,
+    },
+    {
+      flatIndex: 1,
+      email: "secretary@sunshineapts.com",
+      phone: "9876543002",
+      full_name: "Priya Mehta",
+      role: "SECRETARY" as const,
+    },
+    {
+      flatIndex: 2,
+      email: "treasurer@sunshineapts.com",
+      phone: "9876543003",
+      full_name: "Suresh Patel",
+      role: "TREASURER" as const,
+    },
+    {
+      flatIndex: 3,
+      email: "resident1@gmail.com",
+      phone: "9876543004",
+      full_name: "Anita Joshi",
+      role: "RESIDENT" as const,
+    },
+    {
+      flatIndex: 4,
+      email: "mananisharad1@gmail.com",
+      phone: "9876543005",
+      full_name: "Sharad Manani",
+      role: "RESIDENT" as const,
+    },
+  ];
 
-  // ─── 4. Create Sample Bills ─────────────────────────────
-  const currentDate = new Date();
-  const currentMonth = currentDate.getMonth() + 1;
-  const currentYear = currentDate.getFullYear();
-
-  await Promise.all(
-    flats.map((flat, index) =>
-      prisma.bill.create({
-        data: {
+  const users = await Promise.all(
+    userData.map((u) =>
+      prisma.user.upsert({
+        where: {
+          society_id_email: {
+            society_id: society.id,
+            email: u.email,
+          },
+        },
+        update: {},
+        create: {
           society_id: society.id,
-          flat_id: flat.id,
-          user_id: users[index].id,
-          bill_number: `BILL-${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(index + 1).padStart(3, "0")}`,
-          billing_month: currentMonth,
-          billing_year: currentYear,
-          amount: flat.monthly_amount,
-          total_amount: flat.monthly_amount,
-          due_date: new Date(currentYear, currentMonth - 1, 10),
-          status: index === 0 ? "PAID" : "PENDING",
+          flat_id: flats[u.flatIndex].id,
+          email: u.email,
+          phone: u.phone,
+          full_name: u.full_name,
+          role: u.role,
+          status: "ACTIVE",
+          is_owner: true,
         },
       }),
     ),
   );
-  console.log(`✅ ${flats.length} bills created`);
+  console.log(`✅ ${users.length} users created`);
 
-  // ─── 5. Create Sample Notice ─────────────────────────────
-  await prisma.notice.create({
-    data: {
-      society_id: society.id,
-      created_by: users[1].id,
-      title: "Monthly Meeting — July 2024",
-      content:
-        "Dear Residents, the monthly society meeting will be held on 15th July 2024 at 7:00 PM in the community hall. Agenda: Maintenance updates, budget review, and upcoming repairs. All residents are requested to attend.",
-      category: "MEETING",
-      is_pinned: true,
-      is_urgent: false,
-    },
-  });
-  console.log("✅ Sample notice created");
+  // ─── 4. Create Sample Notice ─────────────────────────────
+  const secretary = users.find((u) => u.email === "secretary@sunshineapts.com");
 
-  // ─── 6. Create Sample Complaint ─────────────────────────
-  await prisma.complaint.create({
-    data: {
-      society_id: society.id,
-      raised_by: users[3].id,
-      complaint_number: "COMP-2024-001",
-      category: "PLUMBING",
-      priority: "HIGH",
-      title: "Water leakage in bathroom",
-      description:
-        "There is a significant water leakage from the pipe under the bathroom sink in flat B-202. Water is dripping continuously and damaging the cabinet below.",
-      status: "OPEN",
-      location: "Flat B-202, Bathroom",
-    },
-  });
-  console.log("✅ Sample complaint created");
+  if (secretary) {
+    await prisma.notice.create({
+      data: {
+        society_id: society.id,
+        created_by: secretary.id,
+        title: "Monthly Meeting — Welcome to SocietyOS",
+        content:
+          "Dear Residents, welcome to SocietyOS! " +
+          "This platform will help us manage our society digitally. " +
+          "Please login and explore the features available to you.",
+        category: "GENERAL",
+        is_pinned: true,
+        is_urgent: false,
+      },
+    });
+    console.log("✅ Sample notice created");
+  }
 
-  // ─── 7. Create Amenity ───────────────────────────────────
-  await prisma.amenity.create({
-    data: {
-      society_id: society.id,
-      name: "Community Hall",
-      description: "Large hall suitable for meetings and celebrations",
-      capacity: 100,
-      location: "Ground Floor",
-      booking_price: 500,
-      slot_duration_min: 120,
-      open_time: "08:00",
-      close_time: "22:00",
-      requires_approval: true,
-      advance_days: 7,
-    },
-  });
-  console.log("✅ Sample amenity created");
+  // ─── 5. Create Sample Complaint ──────────────────────────
+  const resident = users.find((u) => u.email === "mananisharad1@gmail.com");
+
+  if (resident) {
+    await prisma.complaint
+      .create({
+        data: {
+          society_id: society.id,
+          raised_by: resident.id,
+          complaint_number: "COMP-2024-0001",
+          category: "PLUMBING",
+          priority: "HIGH",
+          title: "Water leakage in bathroom",
+          description:
+            "There is a water leak from the pipe under the bathroom sink. " +
+            "Water is dripping continuously.",
+          status: "OPEN",
+          location: "Flat C-301, Bathroom",
+        },
+      })
+      .catch(() => {
+        // Ignore if already exists
+      });
+    console.log("✅ Sample complaint created");
+  }
+
+  // ─── 6. Create Amenity ───────────────────────────────────
+  await prisma.amenity
+    .create({
+      data: {
+        society_id: society.id,
+        name: "Community Hall",
+        description: "Large hall for meetings and celebrations",
+        capacity: 100,
+        location: "Ground Floor",
+        booking_price: 500,
+        slot_duration_min: 120,
+        open_time: "08:00",
+        close_time: "22:00",
+        requires_approval: true,
+        advance_days: 7,
+        is_active: true,
+      },
+    })
+    .catch(() => {
+      // Ignore if already exists
+    });
+  console.log("✅ Amenity created");
 
   console.log("");
-  console.log("🎉 Seed completed successfully!");
+  console.log("🎉 Seed completed!");
   console.log("");
-  console.log("📧 Test user emails:");
+  console.log("📧 Login with these emails:");
+  console.log("   mananisharad1@gmail.com     (RESIDENT)");
   console.log("   president@sunshineapts.com  (PRESIDENT)");
   console.log("   secretary@sunshineapts.com  (SECRETARY)");
   console.log("   treasurer@sunshineapts.com  (TREASURER)");
-  console.log("   resident1@gmail.com          (RESIDENT)");
-  console.log("   sharad@gmail.com             (RESIDENT)");
 }
 
 main()
