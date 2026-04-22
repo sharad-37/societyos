@@ -15,19 +15,19 @@ const isDev = process.env.NODE_ENV === "development";
 
 export const apiRateLimiter = new Ratelimit({
   redis,
-  limiter: Ratelimit.slidingWindow(isDev ? 1000 : 100, "1 m"),
+  limiter: Ratelimit.slidingWindow(isDev ? 2000 : 200, "1 m"),
   prefix: "rl:api",
 });
 
 export const authRateLimiter = new Ratelimit({
   redis,
-  limiter: Ratelimit.slidingWindow(isDev ? 100 : 10, "1 h"),
+  limiter: Ratelimit.slidingWindow(isDev ? 200 : 20, "1 h"),
   prefix: "rl:auth",
 });
 
 export const otpRateLimiter = new Ratelimit({
   redis,
-  limiter: Ratelimit.slidingWindow(isDev ? 50 : 3, "1 h"),
+  limiter: Ratelimit.slidingWindow(isDev ? 100 : 10, "1 h"),
   prefix: "rl:otp",
 });
 

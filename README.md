@@ -1,20 +1,95 @@
-# 🏢 SocietyOS
+<div align="center">
+  <img src="https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js" />
+  <img src="https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript" />
+  <img src="https://img.shields.io/badge/Supabase-PostgreSQL-green?style=for-the-badge&logo=supabase" />
+  <img src="https://img.shields.io/badge/Deployed-Vercel-black?style=for-the-badge&logo=vercel" />
+</div>
 
-A production-grade Housing Society (RWA) Management Platform
-built for India. Manages billing, complaints, notices, and more.
+<br />
 
-## 🔗 Live Demo
+<div align="center">
+  <h1>🏢 SocietyOS</h1>
+  <p><strong>Premium Housing Society Management Platform for India</strong></p>
+  <p>A production-grade multi-tenant SaaS built with Next.js 15, TypeScript, and PostgreSQL</p>
 
-**[https://societyos.vercel.app](https://societyos.vercel.app)**
+  <br />
 
-### Test Credentials
+  <a href="https://societyos.vercel.app">
+    <img src="https://img.shields.io/badge/🌐 Live Demo-societyos.vercel.app-blue?style=for-the-badge" />
+  </a>
+</div>
 
-| Role      | Email                   | Access          |
-| --------- | ----------------------- | --------------- |
-| Treasurer | mananisharad1@gmail.com | Full committee  |
-| Resident  | mananisharad1@gmail.com | Resident portal |
+---
 
-> OTP sent to email — no password needed
+## 📸 Screenshots
+
+| Landing Page     | Dashboard        | Mobile            |
+| ---------------- | ---------------- | ----------------- |
+| Apple-style hero | Analytics charts | Bottom navigation |
+
+---
+
+## ✨ Features
+
+### 🔐 Security First
+
+- **Passwordless OTP login** — no passwords stored
+- **JWT tokens** — 15min access + 7day refresh
+- **HttpOnly cookies** — XSS prevention
+- **Rate limiting** — Redis-based (3 OTPs/hour)
+- **SHA-256 vote hashing** — tamper-evident voting
+- **RBAC** — 5 roles, 20+ granular permissions
+- **Full audit trail** — every action logged
+
+### 💰 Billing System
+
+- Auto-generate monthly maintenance bills
+- Track payment status (Pending/Paid/Overdue)
+- Late fee calculation
+- PDF report export
+- Mark bills as paid/overdue
+
+### 📢 Complaint Management
+
+- Raise complaints with priority levels
+- Status flow: Open → Assigned → In Progress → Resolved
+- SLA breach tracking
+- Committee assignment workflow
+
+### 📋 Notice Board
+
+- Post categorized notices (7 categories)
+- Pin urgent announcements
+- Read tracking with view count
+- Expiry dates for time-sensitive notices
+
+### 🗳️ Digital Voting
+
+- One-flat-one-vote enforcement
+- Anonymous voting option
+- SHA-256 tamper-evident hashing
+- Real-time vote progress display
+
+### 👥 Visitor Management
+
+- Generate OTP guest passes
+- Time-limited (2h to 72h)
+- Guard verification system
+- Entry/exit audit trail
+
+### 💼 Fund Transparency
+
+- Complete expense ledger
+- Category-wise breakdown
+- Approval workflow (Treasurer → President)
+- Resident read-only access
+
+### 📊 Analytics Dashboard
+
+- Collection rate radial gauge
+- 6-month area chart
+- Expense pie chart
+- Complaint category breakdown
 
 ---
 
@@ -22,167 +97,35 @@ built for India. Manages billing, complaints, notices, and more.
 
 ### Frontend
 
-- **Next.js 15** — App Router + Server Components
-- **TypeScript** — Full type safety
-- **Tailwind CSS** — Utility-first styling
-- **Shadcn/ui** — Accessible component library
-- **Recharts** — Dashboard analytics charts
+| Technology      | Version | Purpose              |
+| --------------- | ------- | -------------------- |
+| Next.js         | 15.x    | Full-stack framework |
+| TypeScript      | 5.x     | Type safety          |
+| Tailwind CSS    | 3.x     | Styling              |
+| Shadcn/ui       | Latest  | Base components      |
+| Recharts        | 2.x     | Analytics charts     |
+| Lucide React    | Latest  | Icons                |
+| React Hot Toast | Latest  | Notifications        |
 
 ### Backend
 
-- **Next.js API Routes** — REST API
-- **Prisma ORM** — Type-safe database queries
-- **Zod** — Runtime input validation
-- **Jose** — JWT token management
+| Technology         | Version | Purpose          |
+| ------------------ | ------- | ---------------- |
+| Next.js API Routes | 15.x    | REST API         |
+| Prisma ORM         | 6.x     | Database queries |
+| Zod                | 3.x     | Input validation |
+| Jose               | 5.x     | JWT management   |
+| jsPDF              | Latest  | PDF generation   |
 
 ### Infrastructure
 
-- **Supabase** — PostgreSQL database
-- **Upstash Redis** — Rate limiting + OTP cache
-- **Resend** — Transactional email (OTP)
-- **Vercel** — Deployment + CDN
-
----
-
-## ✨ Features
-
-### 🔐 Authentication
-
-- Passwordless OTP login via email
-- JWT access tokens (15 min) + Refresh tokens (7 days)
-- HttpOnly secure cookies
-- Rate limiting (3 OTPs/hour per email)
-
-### 👥 Multi-Tenant Architecture
-
-- Single database, multiple societies
-- Complete data isolation via society_id
-- Row-level security enforcement
-
-### 💰 Maintenance Billing
-
-- Auto-generate monthly bills for all flats
-- Track payment status (Pending/Paid/Overdue)
-- Mark payments as confirmed
-- Late fee tracking
-
-### 📢 Complaint Management
-
-- Raise complaints with priority levels
-- Status flow: Open → Assigned → In Progress → Resolved
-- Committee assignment and tracking
-- SLA monitoring
-
-### 📋 Notice Board
-
-- Post categorized society notices
-- Pin urgent announcements
-- Search and filter notices
-- Read tracking
-
-### 💼 Fund Transparency
-
-- Record all society expenses
-- Category breakdown with charts
-- Approval workflow (Treasurer → President)
-- Full audit trail
-
-### 🔒 Security
-
-- Role-based access control (5 roles)
-- API rate limiting
-- SQL injection prevention (Prisma)
-- XSS protection headers
-- Audit logging for all actions
+| Service  | Plan | Purpose             |
+| -------- | ---- | ------------------- |
+| Supabase | Free | PostgreSQL + Auth   |
+| Upstash  | Free | Redis rate limiting |
+| Resend   | Free | OTP emails          |
+| Vercel   | Free | Deployment + CDN    |
 
 ---
 
 ## 🏗️ Architecture
-
-\`\`\`
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│ Next.js │────▶│ Supabase │ │ Upstash │
-│ (Vercel) │ │ PostgreSQL │ │ Redis │
-│ │ │ │ │ │
-│ Frontend │ │ 18 Tables │ │ Rate Limit │
-│ API Routes │ │ Multi- │ │ OTP Cache │
-│ Middleware │ │ Tenant │ │ │
-└─────────────┘ └─────────────┘ └─────────────┘
-│
-▼
-┌─────────────┐
-│ Resend │
-│ Email │
-│ Service │
-└─────────────┘
-\`\`\`
-
----
-
-## 🚀 Local Setup
-
-\`\`\`bash
-
-# Clone repository
-
-git clone https://github.com/mananisharad/societyos
-cd societyos
-
-# Install dependencies
-
-pnpm install
-
-# Setup environment variables
-
-cp .env.production.example .env.local
-
-# Fill in your values
-
-# Push database schema
-
-npx prisma db push
-
-# Seed sample data
-
-npx prisma db seed
-
-# Start development server
-
-pnpm dev
-\`\`\`
-
-Open [http://localhost:3000](http://localhost:3000)
-
----
-
-## 📁 Project Structure
-
-\`\`\`
-src/
-├── app/
-│ ├── (auth)/ # Login + OTP pages
-│ ├── (dashboard)/ # Protected dashboard pages
-│ │ ├── resident/ # Resident portal
-│ │ └── committee/ # Committee portal
-│ └── api/ # REST API routes
-├── components/
-│ ├── ui/ # Shadcn components
-│ └── shared/ # Reusable components
-├── lib/ # Core utilities
-├── hooks/ # Custom React hooks
-├── types/ # TypeScript definitions
-└── constants/ # App configuration
-\`\`\`
-
----
-
-## 👨‍💻 Built By
-
-**Sharad Manani**
-Cybersecurity Engineering Student — SAKEC
-
-[![GitHub](https://img.shields.io/badge/GitHub-mananisharad-black)](https://github.com/mananisharad)
-
----
-
-_Built as a portfolio project demonstrating full-stack SaaS development_

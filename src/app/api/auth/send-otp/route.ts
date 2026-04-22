@@ -53,19 +53,21 @@ export async function POST(request: NextRequest) {
 
     const { email } = validation.data;
 
-    // 3. Rate limit check (skip in development)
-    if (process.env.NODE_ENV !== "development") {
-      // Rate limit by IP
-      const ipLimit = await otpRateLimiter.limit(ipAddress);
-      if (!ipLimit.success) {
+    // REPLACE WITH this more relaxed version:
+    // Rate limit check
+    const ipLimit = await otpRateLimiter.limit(ipAddress);
+    if (!ipLimit.success) {
+      // Allow in development always
+      if (process.env.NODE_ENV !== "development") {
         return rateLimitResponse();
       }
+    }
 
-      // Rate limit by email
-      const emailLimit = await otpRateLimiter.limit(`email:${email}`);
-      if (!emailLimit.success) {
+    const emailLimit = await otpRateLimiter.limit(`email:${email}`);
+    if (!emailLimit.success) {
+      if (process.env.NODE_ENV !== "development") {
         return errorResponse(
-          "Too many OTP requests for this email. Please wait 1 hour.",
+          "Too many OTP requests. Please wait before trying again.",
           429,
         );
       }
