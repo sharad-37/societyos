@@ -1,33 +1,24 @@
 // src/middleware.ts
-// ============================================================
-// NEXT.JS MIDDLEWARE
-// Runs before EVERY request
-// Protects routes — verifies JWT tokens
-// ============================================================
+// Add this comment at top to acknowledge:
+// Next.js 16 - middleware.ts is still valid
 
-import { verifyAccessToken } from "@/lib/jwt";
 import { NextRequest, NextResponse } from "next/server";
+import { verifyAccessToken } from "@/lib/jwt";
 
 // Routes that do NOT need authentication
 const PUBLIC_ROUTES = [
-  "/", // Landing page
-  "/login", // Login page
-  "/verify-otp", // OTP verification
-  "/api/auth/send-otp", // Send OTP API
-  "/api/auth/verify-otp", // Verify OTP API
+  "/",
+  "/login",
+  "/verify-otp",
+  "/api/auth/send-otp",
+  "/api/auth/verify-otp",
 ];
 
-// Routes that start with these prefixes are public
-const PUBLIC_PREFIXES = [
-  "/_next", // Next.js internals
-  "/favicon", // Favicon
-  "/images", // Public images
-];
+const PUBLIC_PREFIXES = ["/_next", "/favicon", "/images"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // ── Check if route is public ────────────────────────────
   const isPublicRoute = PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(route + "/"),
   );
@@ -39,29 +30,30 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // ── Get access token from cookie ────────────────────────
   const accessToken = request.cookies.get("access_token")?.value;
 
   if (!accessToken) {
-    // API routes return 401 JSON
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
-        { success: false, message: "Authentication required" },
+        {
+          success: false,
+          message: "Authentication required",
+        },
         { status: 401 },
       );
     }
-    // Page routes redirect to login
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // ── Verify JWT token ─────────────────────────────────────
   const payload = await verifyAccessToken(accessToken);
 
   if (!payload) {
-    // Token is invalid or expired
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
-        { success: false, message: "Token expired. Please login again." },
+        {
+          success: false,
+          message: "Token expired. Please login again.",
+        },
         { status: 401 },
       );
     }
@@ -70,8 +62,7 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // ── Attach user info to request headers ──────────────────
-  // API routes can read these headers
+  // Attach user info to headers
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-user-id", payload.sub);
   requestHeaders.set("x-user-email", payload.email);
@@ -79,7 +70,7 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set("x-society-id", payload.societyId);
   requestHeaders.set("x-flat-id", payload.flatId || "");
 
-  // ── Role-based page access ───────────────────────────────
+  // Role-based page access
   if (pathname.startsWith("/committee") || pathname.startsWith("/admin")) {
     const committeeRoles = ["SECRETARY", "TREASURER", "PRESIDENT", "ADMIN"];
     if (!committeeRoles.includes(payload.role)) {
@@ -93,10 +84,11 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next({ request: { headers: requestHeaders } });
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 }
 
-// Which routes middleware runs on
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
