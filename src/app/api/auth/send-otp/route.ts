@@ -1,20 +1,20 @@
 // src/app/api/auth/send-otp/route.ts
 // POST /api/auth/send-otp
-// ============================================================
+
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import prisma from "@/lib/prisma";
+import { otpStore, otpRateLimiter } from "@/lib/redis";
+import { sendOTPEmail } from "@/lib/resend";
+import { createAuditLog, getRequestMeta } from "@/lib/audit";
 import {
+  successResponse,
   errorResponse,
   rateLimitResponse,
   serverErrorResponse,
-  successResponse,
 } from "@/lib/api-response";
-import { createAuditLog, getRequestMeta } from "@/lib/audit";
-import prisma from "@/lib/prisma";
-import { otpRateLimiter, otpStore } from "@/lib/redis";
-import { sendOTPEmail } from "@/lib/resend";
-import { NextRequest } from "next/server";
-import { z } from "zod";
 
-// ─── Validation Schema ───────────────────────────────────────
+// ─── Validation Schema ────────────────────────────────────────
 const sendOTPSchema = z.object({
   email: z
     .string()
@@ -23,7 +23,7 @@ const sendOTPSchema = z.object({
     .trim(),
 });
 
-// ─── Generate 6-digit OTP ────────────────────────────────────
+// ─── Generate 6-digit OTP ─────────────────────────────────────
 function generateOTP(length: number = 6): string {
   const digits = "0123456789";
   let otp = "";
@@ -33,7 +33,7 @@ function generateOTP(length: number = 6): string {
   return otp;
 }
 
-// ─── Route Handler ───────────────────────────────────────────
+// ─── Route Handler ────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   const { ipAddress, userAgent } = getRequestMeta(request);
 
@@ -53,50 +53,25 @@ export async function POST(request: NextRequest) {
 
     const { email } = validation.data;
 
-    // REPLACE WITH this more relaxed version:
-    // Rate limit check
-    const ipLimit = await otpRateLimiter.limit(ipAddress);
-    if (!ipLimit.success) {
-      // Allow in development always
-      if (process.env.NODE_ENV !== "development") {
+    // 3. Rate limit check
+    const isDev = process.env.NODE_ENV === "development";
+
+    if (!isDev) {
+      const ipLimit = await otpRateLimiter.limit(ipAddress);
+      if (!ipLimit.success) {
         return rateLimitResponse();
+      }
+
+      const emailLimit = await otpRateLimiter.limit(`email:${email}`);
+      if (!emailLimit.success) {
+        return errorResponse(
+          "Too many OTP requests. Please wait before trying again.",
+          429,
+        );
       }
     }
 
-    const emailSent = await sendOTPEmail(
-      email,
-      otp,
-      user?.full_name || undefined,
-    );
-
-    if (!emailSent) {
-      console.error("❌ Email failed for:", email);
-
-      // Always return OTP in response
-      // In dev: for testing convenience
-      // In prod: fallback so login never breaks
-      return successResponse(
-        {
-          email,
-          expiresInMinutes: 10,
-          otp, // Always show OTP as fallback
-          note: "Check your email OR use OTP shown here",
-        },
-        "OTP generated. Check email or use the code shown.",
-      );
-    }
-
-    // Success — return OTP in dev, hide in prod
-    return successResponse(
-      {
-        email,
-        expiresInMinutes: 10,
-        ...(process.env.NODE_ENV === "development" && { otp }),
-      },
-      "OTP sent successfully. Please check your email.",
-    );
-
-    // 5. Check if user exists in any society
+    // 4. Check if user exists
     const user = await prisma.user.findFirst({
       where: {
         email,
@@ -111,41 +86,20 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 6. Generate OTP (regardless of user existence — prevents enumeration)
+    // 5. Generate OTP
     const otp = generateOTP(6);
 
-    // 7. Store OTP in Redis (expires in 10 minutes)
+    // 6. Store OTP in Redis
     await otpStore.set(email, otp);
 
-    // REPLACE WITH:
+    // 7. Try to send email
     const emailSent = await sendOTPEmail(
       email,
       otp,
       user?.full_name || undefined,
     );
 
-    // Development: show OTP even if email fails
-    if (!emailSent) {
-      console.error("❌ Email send failed for:", email);
-
-      // In development — return OTP anyway so you can test
-      if (process.env.NODE_ENV === "development") {
-        console.log("🔑 DEV MODE OTP:", otp, "for email:", email);
-        return successResponse(
-          {
-            email,
-            expiresInMinutes: 10,
-            otp, // Show OTP in response for dev testing
-            warning: "Email failed but OTP shown for development",
-          },
-          "OTP generated (email failed — check console for OTP)",
-        );
-      }
-
-      return errorResponse("Failed to send OTP email. Please try again.", 500);
-    }
-
-    // 9. Audit log
+    // 8. Audit log
     await createAuditLog({
       userId: user?.id,
       action: "CREATE",
@@ -155,13 +109,31 @@ export async function POST(request: NextRequest) {
       newValues: { email, userExists: !!user },
     });
 
-    // 10. Return success (same message whether user exists or not)
+    // 9. Return response
+    // Always include OTP as fallback
+    // This ensures login works even if email fails
+    if (!emailSent) {
+      console.error("❌ Email send failed for:", email);
+      console.log("🔑 Fallback OTP:", otp);
+
+      return successResponse(
+        {
+          email,
+          expiresInMinutes: 10,
+          otp,
+          warning: "Email delivery failed. Use the OTP code shown here.",
+        },
+        "OTP generated. Email failed — use the code shown.",
+      );
+    }
+
+    // Email sent successfully
     return successResponse(
       {
         email,
         expiresInMinutes: 10,
-        // Only in development — remove in production
-        ...(process.env.NODE_ENV === "development" && { otp }),
+        // Show OTP in development only
+        ...(isDev && { otp }),
       },
       "OTP sent successfully. Please check your email.",
     );
