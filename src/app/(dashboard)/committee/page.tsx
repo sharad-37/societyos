@@ -1,681 +1,429 @@
-// src/app/(dashboard)/committee/page.tsx
+// src/app/(dashboard)/committee/complaints/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import {
-  IndianRupee,
   MessageSquare,
-  TrendingUp,
-  AlertTriangle,
-  CreditCard,
   CheckCircle,
-  Users,
-  ArrowUpRight,
-  BarChart3,
-  Activity,
-  Zap,
+  Clock,
+  AlertTriangle,
+  RefreshCw,
+  ChevronDown,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  RadialBarChart,
-  RadialBar,
-} from "recharts";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { StatsCard } from "@/components/shared/StatsCard";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { DataTable } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
-import { useAuth } from "@/hooks/useAuth";
-import { formatINR, formatDateShort } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { Pagination } from "@/components/shared/Pagination";
+import { AppleStatsCard } from "@/components/ui/apple-components";
+import { formatDateShort } from "@/lib/utils";
 
-// ─── Types ────────────────────────────────────────────────────
-interface DashboardStats {
-  totalCollected: number;
-  totalPending: number;
-  openComplaints: number;
-  overdueCount: number;
-  totalMembers: number;
-  collectionRate: number;
-}
-
-interface BillItem {
-  id: string;
-  bill_number: string;
-  status: string;
-  total_amount: string;
-  flat: { flat_number: string; wing: string | null } | null;
-  user: { full_name: string } | null;
-}
-
-interface ComplaintItem {
+interface Complaint {
   id: string;
   complaint_number: string;
-  title: string;
+  category: string;
   priority: string;
+  title: string;
+  description: string;
   status: string;
   created_at: string;
   raised_by_user: {
     full_name: string;
     flat: { flat_number: string } | null;
   } | null;
+  assigned_to_user: { full_name: string } | null;
 }
 
-// ─── Chart Data (will be replaced with real API) ──────────────
-const areaChartData = [
-  { month: "Jan", collected: 72000, target: 85000 },
-  { month: "Feb", collected: 85000, target: 85000 },
-  { month: "Mar", collected: 92000, target: 88000 },
-  { month: "Apr", collected: 78000, target: 88000 },
-  { month: "May", collected: 95000, target: 90000 },
-  { month: "Jun", collected: 88000, target: 90000 },
-  { month: "Jul", collected: 102000, target: 95000 },
-];
+const STATUS_FLOW: Record<string, string[]> = {
+  OPEN: ["ASSIGNED", "REJECTED"],
+  ASSIGNED: ["IN_PROGRESS", "OPEN"],
+  IN_PROGRESS: ["RESOLVED", "ASSIGNED"],
+  RESOLVED: ["CLOSED"],
+  CLOSED: [],
+  REJECTED: [],
+};
 
-const expensePieData = [
-  { name: "Security", value: 35000, color: "#f97316" },
-  { name: "Cleaning", value: 18000, color: "#8b5cf6" },
-  { name: "Electricity", value: 25000, color: "#3b82f6" },
-  { name: "Maintenance", value: 42000, color: "#22c55e" },
-  { name: "Other", value: 12000, color: "#f43f5e" },
-];
+export default function CommitteeComplaintsPage() {
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(
+    null,
+  );
+  const [showModal, setShowModal] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [priorityFilter, setPriorityFilter] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    totalPages: 1,
+    hasNext: false,
+    hasPrev: false,
+  });
+  const [stats, setStats] = useState({
+    open: 0,
+    inProgress: 0,
+    resolved: 0,
+    urgent: 0,
+  });
+  const [updateForm, setUpdateForm] = useState({ newStatus: "", note: "" });
+  const [isUpdating, setIsUpdating] = useState(false);
 
-const complaintCategoryData = [
-  { name: "Plumbing", count: 12, color: "#3b82f6" },
-  { name: "Electrical", count: 8, color: "#f97316" },
-  { name: "Cleaning", count: 15, color: "#22c55e" },
-  { name: "Security", count: 5, color: "#f43f5e" },
-  { name: "Lift", count: 3, color: "#8b5cf6" },
-];
+  useEffect(() => {
+    fetchComplaints();
+  }, [statusFilter, priorityFilter, page]);
 
-// ─── Custom Tooltip ───────────────────────────────────────────
-function CustomTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: any[];
-  label?: string;
-}) {
-  if (active && payload && payload.length) {
-    return (
-      <div className="glass rounded-xl border p-3 shadow-xl text-sm">
-        <p className="font-semibold text-zinc-900 mb-1">{label}</p>
-        {payload.map((entry: any, i: number) => (
-          <div key={i} className="flex items-center gap-2">
-            <div
-              className="h-2 w-2 rounded-full"
-              style={{ background: entry.color }}
-            />
-            <span className="text-zinc-600">{entry.name}:</span>
-            <span className="font-semibold">{formatINR(entry.value)}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  return null;
-}
+  const fetchComplaints = async () => {
+    setIsLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: "15",
+        ...(statusFilter !== "ALL" && { status: statusFilter }),
+        ...(priorityFilter !== "ALL" && { priority: priorityFilter }),
+      });
+      const res = await fetch(`/api/complaints?${params}`);
+      const data = await res.json();
+      if (data.success) {
+        const all: Complaint[] = data.data || [];
+        setComplaints(all);
+        setPagination({
+          total: data.pagination?.total || 0,
+          totalPages: data.pagination?.totalPages || 1,
+          hasNext: data.pagination?.hasNext || false,
+          hasPrev: data.pagination?.hasPrev || false,
+        });
+        setStats({
+          open: all.filter((c) => c.status === "OPEN").length,
+          inProgress: all.filter((c) =>
+            ["IN_PROGRESS", "ASSIGNED"].includes(c.status),
+          ).length,
+          resolved: all.filter((c) => ["RESOLVED", "CLOSED"].includes(c.status))
+            .length,
+          urgent: all.filter((c) => c.priority === "URGENT").length,
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-// ─── Radial Collection Rate ───────────────────────────────────
-function CollectionRateGauge({ rate }: { rate: number }) {
-  const data = [
-    { name: "Collected", value: rate, fill: "#22c55e" },
+  const handleUpdate = async () => {
+    if (!selectedComplaint) return;
+    setIsUpdating(true);
+    try {
+      const res = await fetch(`/api/complaints/${selectedComplaint.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: updateForm.newStatus,
+          note: updateForm.note,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Complaint updated");
+        setShowModal(false);
+        fetchComplaints();
+      } else toast.error(data.message);
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const columns = [
     {
-      name: "Remaining",
-      value: 100 - rate,
-      fill: "#f4f4f5",
+      key: "id",
+      label: "ID",
+      render: (c: Complaint) => (
+        <span className="font-mono text-xs text-muted-foreground">
+          {c.complaint_number}
+        </span>
+      ),
+    },
+    {
+      key: "flat",
+      label: "Flat",
+      render: (c: Complaint) => (
+        <div>
+          <p className="text-sm font-medium">
+            {c.raised_by_user?.flat?.flat_number || "N/A"}
+          </p>
+          <p className="text-xs text-muted-foreground truncate max-w-[100px]">
+            {c.raised_by_user?.full_name}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "title",
+      label: "Issue",
+      render: (c: Complaint) => (
+        <div className="max-w-[180px]">
+          <p className="text-sm font-medium line-clamp-1">{c.title}</p>
+          <p className="text-xs text-muted-foreground capitalize">
+            {c.category.toLowerCase()}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "priority",
+      label: "Priority",
+      render: (c: Complaint) => (
+        <StatusBadge status={c.priority} type="complaint-priority" />
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (c: Complaint) => (
+        <StatusBadge status={c.status} type="complaint-status" />
+      ),
+    },
+    {
+      key: "date",
+      label: "Date",
+      render: (c: Complaint) => (
+        <span className="text-xs text-muted-foreground">
+          {formatDateShort(c.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      label: "",
+      render: (c: Complaint) => (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs"
+          disabled={["CLOSED", "REJECTED"].includes(c.status)}
+          onClick={() => {
+            setSelectedComplaint(c);
+            setUpdateForm({ newStatus: c.status, note: "" });
+            setShowModal(true);
+          }}
+        >
+          Manage <ChevronDown className="h-3 w-3 ml-1" />
+        </Button>
+      ),
     },
   ];
 
   return (
-    <div className="relative flex items-center justify-center">
-      <ResponsiveContainer width={140} height={140}>
-        <RadialBarChart
-          innerRadius={45}
-          outerRadius={65}
-          data={data}
-          startAngle={90}
-          endAngle={-270}
-        >
-          <RadialBar dataKey="value" cornerRadius={8} />
-        </RadialBarChart>
-      </ResponsiveContainer>
-      <div className="absolute text-center">
-        <p className="text-2xl font-black text-zinc-900">{rate}%</p>
-        <p className="text-[10px] text-zinc-500 font-medium">Collected</p>
-      </div>
-    </div>
-  );
-}
+    <div className="space-y-6">
+      <PageHeader
+        title="Complaint Management"
+        description="Track and resolve resident complaints"
+        icon={MessageSquare}
+        action={
+          <Button variant="outline" size="sm" onClick={fetchComplaints}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        }
+      />
 
-// ─── Main Component ───────────────────────────────────────────
-export default function CommitteeDashboard() {
-  const { user } = useAuth();
-  const [isLoading, setIsLoading] = useState(true);
-  const [stats, setStats] = useState<DashboardStats>({
-    totalCollected: 0,
-    totalPending: 0,
-    openComplaints: 0,
-    overdueCount: 0,
-    totalMembers: 0,
-    collectionRate: 0,
-  });
-  const [recentComplaints, setRecentComplaints] = useState<ComplaintItem[]>([]);
-  const [recentBills, setRecentBills] = useState<BillItem[]>([]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [billsRes, complaintsRes, membersRes] = await Promise.all([
-          fetch("/api/billing?limit=5"),
-          fetch("/api/complaints?limit=5"),
-          fetch("/api/members?limit=1"),
-        ]);
-
-        const [billsData, complaintsData, membersData] = await Promise.all([
-          billsRes.json(),
-          complaintsRes.json(),
-          membersRes.json(),
-        ]);
-
-        const bills: BillItem[] = billsData.data || [];
-        const complaints: ComplaintItem[] = complaintsData.data || [];
-
-        const collected = bills
-          .filter((b) => b.status === "PAID")
-          .reduce((s, b) => s + Number(b.total_amount), 0);
-
-        const pending = bills
-          .filter((b) => b.status === "PENDING" || b.status === "OVERDUE")
-          .reduce((s, b) => s + Number(b.total_amount), 0);
-
-        const total = collected + pending;
-        const rate = total > 0 ? Math.round((collected / total) * 100) : 0;
-
-        setStats({
-          totalCollected: collected,
-          totalPending: pending,
-          openComplaints: complaints.filter((c) => c.status === "OPEN").length,
-          overdueCount: bills.filter((b) => b.status === "OVERDUE").length,
-          totalMembers: membersData.pagination?.total || 0,
-          collectionRate: rate,
-        });
-
-        setRecentComplaints(complaints.slice(0, 4));
-        setRecentBills(bills.slice(0, 4));
-      } catch (error) {
-        console.error("Dashboard error:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        {/* Skeleton loading */}
-        <div className="h-28 rounded-2xl bg-zinc-200" />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-28 rounded-2xl bg-zinc-200" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="h-64 rounded-2xl bg-zinc-200" />
-          <div className="h-64 rounded-2xl bg-zinc-200" />
-        </div>
-      </div>
-    );
-  }
-
-  const greeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 17) return "Good afternoon";
-    return "Good evening";
-  };
-
-  return (
-    <div className="space-y-6 stagger-children">
-      {/* ── HERO WELCOME BANNER ──────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl bg-zinc-950 p-6 text-white">
-        {/* Background decoration */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-600/10 rounded-full blur-3xl" />
-
-        <div className="relative flex items-center justify-between">
-          <div>
-            <p className="text-zinc-400 text-sm mb-1">
-              {greeting()},{" "}
-              <span className="text-white font-medium">
-                {user?.fullName?.split(" ")[0]}
-              </span>{" "}
-              👋
-            </p>
-            <h1 className="text-2xl font-bold">Committee Dashboard</h1>
-            <p className="text-zinc-400 text-sm mt-1">
-              {user?.societyName} •{" "}
-              {new Date().toLocaleDateString("en-IN", {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </p>
-          </div>
-
-          {/* Quick collection rate display */}
-          <div className="hidden sm:block">
-            <CollectionRateGauge rate={stats.collectionRate} />
-          </div>
-        </div>
-
-        {/* Quick stats strip */}
-        <div className="relative mt-4 flex items-center gap-6 pt-4 border-t border-zinc-800">
-          <div className="text-center">
-            <p className="text-xl font-bold text-green-400">
-              {formatINR(stats.totalCollected)}
-            </p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
-              Collected
-            </p>
-          </div>
-          <div className="h-8 w-px bg-zinc-800" />
-          <div className="text-center">
-            <p className="text-xl font-bold text-amber-400">
-              {formatINR(stats.totalPending)}
-            </p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
-              Pending
-            </p>
-          </div>
-          <div className="h-8 w-px bg-zinc-800" />
-          <div className="text-center">
-            <p className="text-xl font-bold text-red-400">
-              {stats.openComplaints}
-            </p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
-              Open Issues
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── STATS GRID ───────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatsCard
-          title="Total Collected"
-          value={formatINR(stats.totalCollected)}
-          icon={IndianRupee}
-          color="green"
-          subtitle="This month"
-          trend={{ value: 12, label: "vs last month", positive: true }}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <AppleStatsCard
+          label="Open"
+          value={stats.open}
+          icon={AlertTriangle}
+          iconColor={stats.open > 0 ? "bg-red-500" : "bg-green-500"}
+          sublabel="Need attention"
         />
-        <StatsCard
-          title="Pending Amount"
-          value={formatINR(stats.totalPending)}
-          icon={CreditCard}
-          color="yellow"
-          subtitle="Awaiting payment"
+        <AppleStatsCard
+          label="In Progress"
+          value={stats.inProgress}
+          icon={Clock}
+          iconColor="bg-amber-500"
+          sublabel="Being resolved"
         />
-        <StatsCard
-          title="Open Complaints"
-          value={stats.openComplaints}
-          icon={MessageSquare}
-          color={stats.openComplaints > 5 ? "red" : "blue"}
-          subtitle="Need resolution"
+        <AppleStatsCard
+          label="Resolved"
+          value={stats.resolved}
+          icon={CheckCircle}
+          iconColor="bg-green-500"
+          sublabel="Completed"
         />
-        <StatsCard
-          title="Total Members"
-          value={stats.totalMembers}
-          icon={Users}
-          color="purple"
-          subtitle="Active residents"
+        <AppleStatsCard
+          label="Urgent"
+          value={stats.urgent}
+          icon={AlertTriangle}
+          iconColor={stats.urgent > 0 ? "bg-red-500" : "bg-green-500"}
+          sublabel="High priority"
         />
       </div>
 
-      {/* ── CHARTS ROW ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Area Chart — Collection Trend */}
-        <Card className="lg:col-span-2 card-hover">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base font-semibold">
-                  Collection Trend
-                </CardTitle>
-                <CardDescription>Monthly billing vs target</CardDescription>
-              </div>
-              <div className="flex items-center gap-1 text-xs text-green-600 bg-green-50 border border-green-200 rounded-full px-2.5 py-1 font-medium">
-                <TrendingUp className="h-3 w-3" />
-                +12.5%
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={areaChartData}>
-                <defs>
-                  <linearGradient
-                    id="collectedGrad"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="targetGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#f0f0f0"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="month"
-                  tick={{ fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Area
-                  type="monotone"
-                  dataKey="target"
-                  name="Target"
-                  stroke="#3b82f6"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
-                  fill="url(#targetGrad)"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="collected"
-                  name="Collected"
-                  stroke="#22c55e"
-                  strokeWidth={2}
-                  fill="url(#collectedGrad)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Expense Pie */}
-        <Card className="card-hover">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">Expenses</CardTitle>
-            <CardDescription>By category</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={140}>
-              <PieChart>
-                <Pie
-                  data={expensePieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={40}
-                  outerRadius={60}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {expensePieData.map((entry, i) => (
-                    <Cell
-                      key={i}
-                      fill={entry.color}
-                      stroke="white"
-                      strokeWidth={2}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v) => formatINR(Number(v))} />
-              </PieChart>
-            </ResponsiveContainer>
-
-            {/* Legend */}
-            <div className="space-y-1.5 mt-2">
-              {expensePieData.map((item) => (
-                <div
-                  key={item.name}
-                  className="flex items-center justify-between text-xs"
-                >
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="h-2 w-2 rounded-full flex-shrink-0"
-                      style={{ background: item.color }}
-                    />
-                    <span className="text-zinc-600">{item.name}</span>
-                  </div>
-                  <span className="font-semibold text-zinc-800">
-                    {formatINR(item.value)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="apple-card overflow-hidden">
+        <div className="p-5 pb-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700/50">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
+            All Complaints ({pagination.total})
+          </h3>
+          <div className="flex gap-2">
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                setStatusFilter(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-32 h-8 text-sm">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Status</SelectItem>
+                <SelectItem value="OPEN">Open</SelectItem>
+                <SelectItem value="ASSIGNED">Assigned</SelectItem>
+                <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                <SelectItem value="RESOLVED">Resolved</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={priorityFilter}
+              onValueChange={(v) => {
+                setPriorityFilter(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-32 h-8 text-sm">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Priority</SelectItem>
+                <SelectItem value="URGENT">Urgent</SelectItem>
+                <SelectItem value="HIGH">High</SelectItem>
+                <SelectItem value="MEDIUM">Medium</SelectItem>
+                <SelectItem value="LOW">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="p-5">
+          <DataTable
+            data={complaints}
+            columns={columns}
+            isLoading={isLoading}
+            keyExtractor={(c) => c.id}
+            emptyTitle="No complaints found"
+            emptyDescription="All complaints appear here"
+          />
+          <Pagination
+            page={page}
+            totalPages={pagination.totalPages}
+            hasNext={pagination.hasNext}
+            hasPrev={pagination.hasPrev}
+            onNext={() => setPage(page + 1)}
+            onPrev={() => setPage(page - 1)}
+            total={pagination.total}
+            limit={15}
+          />
+        </div>
       </div>
 
-      {/* ── COMPLAINT CATEGORIES + RECENT ────────────────── */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Bar Chart — Complaints by Category */}
-        <Card className="card-hover">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">
-              Complaints by Category
-            </CardTitle>
-            <CardDescription>Distribution this month</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={complaintCategoryData} barSize={28}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#f0f0f0"
-                  horizontal={true}
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  formatter={(v) => [v, "Complaints"]}
-                  contentStyle={{
-                    borderRadius: "12px",
-                    border: "1px solid #e4e4e7",
-                    fontSize: "12px",
-                  }}
-                />
-                <Bar dataKey="count" name="Count" radius={[6, 6, 0, 0]}>
-                  {complaintCategoryData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Recent Complaints Feed */}
-        <Card className="card-hover">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base font-semibold">
-                  Recent Complaints
-                </CardTitle>
-                <CardDescription>Latest issues raised</CardDescription>
-              </div>
-              <div className="flex items-center gap-1 text-xs text-red-600 font-medium">
-                <Activity className="h-3.5 w-3.5" />
-                {stats.openComplaints} open
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {recentComplaints.length === 0 ? (
-              <div className="flex flex-col items-center py-8 text-center">
-                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center mb-3">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                </div>
-                <p className="text-sm font-medium text-zinc-700">All clear!</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  No complaints at the moment
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{selectedComplaint?.complaint_number}</DialogTitle>
+          </DialogHeader>
+          {selectedComplaint && (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800 border p-4 space-y-2">
+                <p className="text-sm font-semibold">
+                  {selectedComplaint.title}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedComplaint.description}
+                </p>
+                <div className="flex gap-2">
+                  <StatusBadge
+                    status={selectedComplaint.priority}
+                    type="complaint-priority"
+                  />
+                  <StatusBadge
+                    status={selectedComplaint.status}
+                    type="complaint-status"
+                  />
+                </div>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {recentComplaints.map((complaint) => (
-                  <div
-                    key={complaint.id}
-                    className="flex items-start gap-3 p-3 rounded-xl bg-zinc-50 border border-zinc-100 hover:bg-zinc-100 transition-colors"
+              {(STATUS_FLOW[selectedComplaint.status] || []).length > 0 && (
+                <div className="space-y-3">
+                  <Label>Update Status</Label>
+                  <Select
+                    value={updateForm.newStatus}
+                    onValueChange={(v) =>
+                      setUpdateForm({ ...updateForm, newStatus: v })
+                    }
                   >
-                    <div className="h-8 w-8 rounded-lg bg-white border flex items-center justify-center flex-shrink-0 shadow-sm">
-                      <MessageSquare className="h-3.5 w-3.5 text-zinc-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate text-zinc-800">
-                        {complaint.title}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-muted-foreground">
-                          {complaint.raised_by_user?.full_name}
-                        </span>
-                        <span className="text-zinc-300">•</span>
-                        <span className="text-xs text-muted-foreground">
-                          Flat{" "}
-                          {complaint.raised_by_user?.flat?.flat_number ?? "N/A"}
-                        </span>
-                      </div>
-                    </div>
-                    <StatusBadge
-                      status={complaint.priority}
-                      type="complaint-priority"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── RECENT BILLS TABLE ───────────────────────────── */}
-      <Card className="card-hover">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base font-semibold">
-                Recent Bills
-              </CardTitle>
-              <CardDescription>Latest maintenance bills</CardDescription>
-            </div>
-            {stats.overdueCount > 0 && (
-              <div className="flex items-center gap-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-full px-3 py-1">
-                <AlertTriangle className="h-3 w-3" />
-                {stats.overdueCount} overdue
-              </div>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {recentBills.length === 0 ? (
-            <div className="flex flex-col items-center py-8 text-center">
-              <CreditCard className="h-8 w-8 text-muted-foreground mb-2" />
-              <p className="text-sm text-muted-foreground">
-                No bills generated yet
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {recentBills.map((bill) => (
-                <div
-                  key={bill.id}
-                  className="flex items-center gap-3 rounded-xl border p-3 hover:bg-zinc-50 transition-colors"
-                >
-                  <div
-                    className={cn(
-                      "h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0",
-                      bill.status === "PAID"
-                        ? "bg-green-100"
-                        : bill.status === "OVERDUE"
-                          ? "bg-red-100"
-                          : "bg-amber-100",
-                    )}
-                  >
-                    <CreditCard
-                      className={cn(
-                        "h-4 w-4",
-                        bill.status === "PAID"
-                          ? "text-green-600"
-                          : bill.status === "OVERDUE"
-                            ? "text-red-600"
-                            : "text-amber-600",
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={selectedComplaint.status}>
+                        {selectedComplaint.status} (Current)
+                      </SelectItem>
+                      {(STATUS_FLOW[selectedComplaint.status] || []).map(
+                        (s) => (
+                          <SelectItem key={s} value={s}>
+                            → {s.replace(/_/g, " ")}
+                          </SelectItem>
+                        ),
                       )}
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold">
-                      {bill.flat?.wing
-                        ? `${bill.flat.wing}-${bill.flat.flat_number}`
-                        : bill.flat?.flat_number || "N/A"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {bill.user?.full_name || "N/A"}
-                    </p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-bold">
-                      {formatINR(Number(bill.total_amount))}
-                    </p>
-                    <StatusBadge status={bill.status} type="bill" />
+                    </SelectContent>
+                  </Select>
+                  <Textarea
+                    placeholder="Add a note..."
+                    value={updateForm.note}
+                    onChange={(e) =>
+                      setUpdateForm({ ...updateForm, note: e.target.value })
+                    }
+                    rows={3}
+                  />
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setShowModal(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleUpdate}
+                      disabled={
+                        isUpdating ||
+                        updateForm.newStatus === selectedComplaint.status
+                      }
+                    >
+                      {isUpdating ? "Updating..." : "Update Status"}
+                    </Button>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

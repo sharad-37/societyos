@@ -9,21 +9,24 @@ import {
   Search,
   Edit2,
   Trash2,
-  Shield,
+  Crown,
   Home,
   Mail,
   Phone,
   RefreshCw,
-  Crown,
   UserCheck,
-  UserX,
-  ChevronDown,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -41,33 +44,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
-import { EmptyState } from "@/components/shared/EmptyState";
-import { StatsCard } from "@/components/shared/StatsCard";
 import { Pagination } from "@/components/shared/Pagination";
-import { getInitials, formatDateShort } from "@/lib/utils";
+import {
+  AppleStatsCard,
+  AppleAvatar,
+  AppleCardSkeleton,
+} from "@/components/ui/apple-components";
+import { formatDateShort } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-// ─── Types ────────────────────────────────────────────────────
 interface Flat {
   id: string;
   flat_number: string;
   wing: string | null;
-  floor: number;
-  monthly_amount: string;
   users: { id: string; full_name: string }[];
 }
-
 interface Member {
   id: string;
   full_name: string;
@@ -76,68 +68,24 @@ interface Member {
   role: string;
   status: string;
   is_owner: boolean;
-  move_in_date: string | null;
   last_login_at: string | null;
-  flat: {
-    flat_number: string;
-    wing: string | null;
-  } | null;
+  flat: { flat_number: string; wing: string | null } | null;
 }
 
-// ─── Constants ────────────────────────────────────────────────
-const ROLE_CONFIG: Record<string, { label: string; color: string; icon: any }> =
-  {
-    PRESIDENT: {
-      label: "President",
-      color: "bg-purple-100 text-purple-700 border-purple-200",
-      icon: Crown,
-    },
-    SECRETARY: {
-      label: "Secretary",
-      color: "bg-blue-100 text-blue-700 border-blue-200",
-      icon: Shield,
-    },
-    TREASURER: {
-      label: "Treasurer",
-      color: "bg-green-100 text-green-700 border-green-200",
-      icon: UserCheck,
-    },
-    RESIDENT: {
-      label: "Resident",
-      color: "bg-zinc-100 text-zinc-700 border-zinc-200",
-      icon: Home,
-    },
-  };
-
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  ACTIVE: {
-    label: "Active",
-    color: "bg-green-100 text-green-700",
-  },
-  INACTIVE: {
-    label: "Inactive",
-    color: "bg-zinc-100 text-zinc-500",
-  },
-  SUSPENDED: {
-    label: "Suspended",
-    color: "bg-red-100 text-red-700",
-  },
-  PENDING_VERIFICATION: {
-    label: "Pending",
-    color: "bg-yellow-100 text-yellow-700",
-  },
+const ROLE_COLORS: Record<string, string> = {
+  PRESIDENT: "bg-purple-100 text-purple-700",
+  SECRETARY: "bg-blue-100 text-blue-700",
+  TREASURER: "bg-green-100 text-green-700",
+  RESIDENT: "bg-zinc-100 text-zinc-700",
 };
 
-// ─── Component ────────────────────────────────────────────────
 export default function MembersPage() {
-  // ── State ──────────────────────────────────────────────────
   const [members, setMembers] = useState<Member[]>([]);
   const [flats, setFlats] = useState<Flat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
-  const [statusFilter, setStatusFilter] = useState("ACTIVE");
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({
     total: 0,
@@ -145,21 +93,12 @@ export default function MembersPage() {
     hasNext: false,
     hasPrev: false,
   });
-  const [stats, setStats] = useState({
-    total: 0,
-    residents: 0,
-    committee: 0,
-    inactive: 0,
-  });
-
-  // Modal states
+  const [stats, setStats] = useState({ total: 0, residents: 0, committee: 0 });
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Add form
   const [addForm, setAddForm] = useState({
     full_name: "",
     email: "",
@@ -169,8 +108,6 @@ export default function MembersPage() {
     is_owner: true,
     move_in_date: "",
   });
-
-  // Edit form
   const [editForm, setEditForm] = useState({
     full_name: "",
     phone: "",
@@ -180,25 +117,20 @@ export default function MembersPage() {
     is_owner: true,
   });
 
-  // ── Search Debounce ────────────────────────────────────────
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const t = setTimeout(() => {
       setSearchDebounced(search);
       setPage(1);
     }, 400);
-    return () => clearTimeout(timer);
+    return () => clearTimeout(t);
   }, [search]);
-
-  // ── Effects ────────────────────────────────────────────────
   useEffect(() => {
     fetchMembers();
-  }, [roleFilter, statusFilter, searchDebounced, page]);
-
+  }, [roleFilter, searchDebounced, page]);
   useEffect(() => {
     fetchFlats();
   }, []);
 
-  // ── Data Fetching ──────────────────────────────────────────
   const fetchMembers = async () => {
     setIsLoading(true);
     try {
@@ -206,36 +138,29 @@ export default function MembersPage() {
         page: String(page),
         limit: "12",
         ...(roleFilter !== "ALL" && { role: roleFilter }),
-        ...(statusFilter !== "ALL" && {
-          status: statusFilter,
-        }),
         ...(searchDebounced && { search: searchDebounced }),
       });
-
-      const response = await fetch(`/api/members?${params}`);
-      const data = await response.json();
-
+      const res = await fetch(`/api/members?${params}`);
+      const data = await res.json();
       if (data.success) {
-        const allMembers: Member[] = data.data || [];
-        setMembers(allMembers);
+        const all: Member[] = data.data || [];
+        setMembers(all);
         setPagination({
           total: data.pagination?.total || 0,
           totalPages: data.pagination?.totalPages || 1,
           hasNext: data.pagination?.hasNext || false,
           hasPrev: data.pagination?.hasPrev || false,
         });
-
         setStats({
           total: data.pagination?.total || 0,
-          residents: allMembers.filter((m) => m.role === "RESIDENT").length,
-          committee: allMembers.filter((m) =>
+          residents: all.filter((m) => m.role === "RESIDENT").length,
+          committee: all.filter((m) =>
             ["PRESIDENT", "SECRETARY", "TREASURER"].includes(m.role),
           ).length,
-          inactive: allMembers.filter((m) => m.status !== "ACTIVE").length,
         });
       }
-    } catch (error) {
-      toast.error("Failed to load members");
+    } catch (e) {
+      console.error(e);
     } finally {
       setIsLoading(false);
     }
@@ -243,23 +168,19 @@ export default function MembersPage() {
 
   const fetchFlats = async () => {
     try {
-      const response = await fetch("/api/flats");
-      const data = await response.json();
-      if (data.success) {
-        setFlats(data.data || []);
-      }
-    } catch {
-      console.error("Failed to fetch flats");
+      const res = await fetch("/api/flats");
+      const data = await res.json();
+      if (data.success) setFlats(data.data || []);
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  // ── Handlers ───────────────────────────────────────────────
-  const handleAddMember = async (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-
     try {
-      const response = await fetch("/api/members", {
+      const res = await fetch("/api/members", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -268,9 +189,7 @@ export default function MembersPage() {
           move_in_date: addForm.move_in_date || undefined,
         }),
       });
-
-      const data = await response.json();
-
+      const data = await res.json();
       if (data.success) {
         toast.success(data.message);
         setShowAddModal(false);
@@ -284,9 +203,7 @@ export default function MembersPage() {
           move_in_date: "",
         });
         fetchMembers();
-      } else {
-        toast.error(data.message || "Failed to add member");
-      }
+      } else toast.error(data.message);
     } catch {
       toast.error("Network error");
     } finally {
@@ -294,13 +211,12 @@ export default function MembersPage() {
     }
   };
 
-  const handleEditMember = async (e: React.FormEvent) => {
+  const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMember) return;
     setIsSubmitting(true);
-
     try {
-      const response = await fetch(`/api/members/${selectedMember.id}`, {
+      const res = await fetch(`/api/members/${selectedMember.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -309,17 +225,12 @@ export default function MembersPage() {
             editForm.flat_id === "none" ? null : editForm.flat_id || undefined,
         }),
       });
-
-      const data = await response.json();
-
+      const data = await res.json();
       if (data.success) {
-        toast.success("Member updated successfully");
+        toast.success("Member updated");
         setShowEditModal(false);
-        setSelectedMember(null);
         fetchMembers();
-      } else {
-        toast.error(data.message || "Failed to update member");
-      }
+      } else toast.error(data.message);
     } catch {
       toast.error("Network error");
     } finally {
@@ -327,404 +238,270 @@ export default function MembersPage() {
     }
   };
 
-  const handleDeleteMember = async () => {
+  const handleDelete = async () => {
     if (!selectedMember) return;
-
     try {
-      const response = await fetch(`/api/members/${selectedMember.id}`, {
+      const res = await fetch(`/api/members/${selectedMember.id}`, {
         method: "DELETE",
       });
-
-      const data = await response.json();
-
+      const data = await res.json();
       if (data.success) {
-        toast.success("Member removed successfully");
+        toast.success("Member removed");
         setShowDeleteDialog(false);
-        setSelectedMember(null);
         fetchMembers();
-      } else {
-        toast.error(data.message || "Failed to remove member");
-      }
+      } else toast.error(data.message);
     } catch {
       toast.error("Network error");
     }
   };
 
-  const openEditModal = (member: Member) => {
-    setSelectedMember(member);
-    setEditForm({
-      full_name: member.full_name,
-      phone: member.phone || "",
-      role: member.role,
-      flat_id: member.flat
-        ? flats.find((f) => f.flat_number === member.flat?.flat_number)?.id ||
-          ""
-        : "",
-      status: member.status,
-      is_owner: member.is_owner,
-    });
-    setShowEditModal(true);
-  };
-
-  const openDeleteDialog = (member: Member) => {
-    setSelectedMember(member);
-    setShowDeleteDialog(true);
-  };
-
-  // ── Helper: Get flat display name ──────────────────────────
   const getFlatLabel = (flat: Flat) => {
     const label = flat.wing
       ? `${flat.wing}-${flat.flat_number}`
       : flat.flat_number;
-    const occupied =
-      flat.users.length > 0 ? ` (${flat.users[0].full_name})` : " (Vacant)";
-    return label + occupied;
+    return (
+      label +
+      (flat.users.length > 0 ? ` (${flat.users[0].full_name})` : " (Vacant)")
+    );
   };
 
-  // ── Render ─────────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <PageHeader
         title="Member Management"
-        description="Manage society residents and committee members"
+        description="Manage residents and committee members"
         icon={Users}
         action={
-          <Button onClick={() => setShowAddModal(true)}>
+          <Button size="sm" onClick={() => setShowAddModal(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add Member
           </Button>
         }
       />
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatsCard
-          title="Total Members"
+      <div className="grid grid-cols-3 gap-4">
+        <AppleStatsCard
+          label="Total Members"
           value={pagination.total}
           icon={Users}
-          color="blue"
-          subtitle="In society"
+          iconColor="bg-blue-500"
+          sublabel="In society"
         />
-        <StatsCard
-          title="Residents"
+        <AppleStatsCard
+          label="Residents"
           value={stats.residents}
           icon={Home}
-          color="default"
-          subtitle="Active residents"
+          iconColor="bg-zinc-500"
+          sublabel="Active"
         />
-        <StatsCard
-          title="Committee"
+        <AppleStatsCard
+          label="Committee"
           value={stats.committee}
           icon={Crown}
-          color="yellow"
-          subtitle="Office bearers"
-        />
-        <StatsCard
-          title="Inactive"
-          value={stats.inactive}
-          icon={UserX}
-          color={stats.inactive > 0 ? "red" : "green"}
-          subtitle="Need attention"
+          iconColor="bg-purple-500"
+          sublabel="Office bearers"
         />
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by name, email or phone..."
-                className="pl-9"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-
-            {/* Role Filter */}
-            <Select
-              value={roleFilter}
-              onValueChange={(v) => {
-                setRoleFilter(v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Roles</SelectItem>
-                <SelectItem value="RESIDENT">Resident</SelectItem>
-                <SelectItem value="SECRETARY">Secretary</SelectItem>
-                <SelectItem value="TREASURER">Treasurer</SelectItem>
-                <SelectItem value="PRESIDENT">President</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Status Filter */}
-            <Select
-              value={statusFilter}
-              onValueChange={(v) => {
-                setStatusFilter(v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Status</SelectItem>
-                <SelectItem value="ACTIVE">Active</SelectItem>
-                <SelectItem value="INACTIVE">Inactive</SelectItem>
-                <SelectItem value="SUSPENDED">Suspended</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Refresh */}
-            <Button
-              variant="outline"
-              onClick={() => fetchMembers()}
-              className="w-full sm:w-auto"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+      <div className="apple-card p-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+            <Input
+              placeholder="Search members..."
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
-        </CardContent>
-      </Card>
+          <Select
+            value={roleFilter}
+            onValueChange={(v) => {
+              setRoleFilter(v);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Roles</SelectItem>
+              <SelectItem value="RESIDENT">Resident</SelectItem>
+              <SelectItem value="SECRETARY">Secretary</SelectItem>
+              <SelectItem value="TREASURER">Treasurer</SelectItem>
+              <SelectItem value="PRESIDENT">President</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={fetchMembers}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
-      {/* Members Grid */}
       {isLoading ? (
-        <div className="flex h-64 items-center justify-center">
-          <LoadingSpinner size="lg" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <AppleCardSkeleton key={i} />
+          ))}
         </div>
       ) : members.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No members found"
-          description={
-            search
-              ? `No members matching "${search}"`
-              : "Add members to your society to get started"
-          }
-          action={
-            !search ? (
-              <Button onClick={() => setShowAddModal(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add First Member
-              </Button>
-            ) : undefined
-          }
-        />
+        <div className="apple-card p-12 text-center">
+          <Users className="h-8 w-8 text-zinc-300 mx-auto mb-3" />
+          <p className="text-sm text-zinc-400">
+            {search ? `No members matching "${search}"` : "No members found"}
+          </p>
+        </div>
       ) : (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {members.map((member) => {
-              const roleConfig =
-                ROLE_CONFIG[member.role] || ROLE_CONFIG.RESIDENT;
-              const statusConfig =
-                STATUS_CONFIG[member.status] || STATUS_CONFIG.ACTIVE;
-              const RoleIcon = roleConfig.icon;
-
-              return (
-                <Card
-                  key={member.id}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {members.map((member) => (
+            <div key={member.id} className="apple-card p-5">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <AppleAvatar name={member.full_name} size="md" />
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-white leading-tight">
+                      {member.full_name}
+                    </p>
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium mt-1",
+                        ROLE_COLORS[member.role] || ROLE_COLORS.RESIDENT,
+                      )}
+                    >
+                      {member.role}
+                    </span>
+                  </div>
+                </div>
+                <span
                   className={cn(
-                    "hover:shadow-md transition-shadow",
-                    member.status !== "ACTIVE" && "opacity-70",
+                    "text-xs font-medium px-2 py-0.5 rounded-full",
+                    member.status === "ACTIVE"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-zinc-100 text-zinc-500",
                   )}
                 >
-                  <CardContent className="p-5">
-                    {/* Header Row */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        {/* Avatar */}
-                        <div className="h-11 w-11 rounded-full bg-zinc-900 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-bold text-white">
-                            {getInitials(member.full_name)}
-                          </span>
-                        </div>
-
-                        {/* Name + Role */}
-                        <div>
-                          <p className="text-sm font-semibold text-zinc-900 leading-tight">
-                            {member.full_name}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
-                                roleConfig.color,
-                              )}
-                            >
-                              <RoleIcon className="h-2.5 w-2.5" />
-                              {roleConfig.label}
-                            </span>
-                            {member.is_owner && (
-                              <span className="text-xs text-muted-foreground">
-                                Owner
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Status Badge */}
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                          statusConfig.color,
-                        )}
-                      >
-                        {statusConfig.label}
-                      </span>
-                    </div>
-
-                    {/* Info Grid */}
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Mail className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="truncate">{member.email}</span>
-                      </div>
-
-                      {member.phone && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Phone className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span>{member.phone}</span>
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Home className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span>
-                          {member.flat
-                            ? `Flat ${member.flat.wing ? member.flat.wing + "-" : ""}${member.flat.flat_number}`
-                            : "No flat assigned"}
-                        </span>
-                      </div>
-
-                      {member.last_login_at && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <UserCheck className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span>
-                            Last login: {formatDateShort(member.last_login_at)}
-                          </span>
-                        </div>
-                      )}
-
-                      {!member.last_login_at && (
-                        <div className="flex items-center gap-2 text-xs text-amber-600">
-                          <UserX className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span>Never logged in</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 pt-3 border-t">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 h-8 text-xs"
-                        onClick={() => openEditModal(member)}
-                      >
-                        <Edit2 className="h-3 w-3 mr-1" />
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50"
-                        onClick={() => openDeleteDialog(member)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* Pagination */}
-          <Pagination
-            page={page}
-            totalPages={pagination.totalPages}
-            hasNext={pagination.hasNext}
-            hasPrev={pagination.hasPrev}
-            onNext={() => setPage(page + 1)}
-            onPrev={() => setPage(page - 1)}
-            total={pagination.total}
-            limit={12}
-          />
-        </>
+                  {member.status}
+                </span>
+              </div>
+              <div className="space-y-1.5 mb-4">
+                <div className="flex items-center gap-2 text-xs text-zinc-500">
+                  <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="truncate">{member.email}</span>
+                </div>
+                {member.phone && (
+                  <div className="flex items-center gap-2 text-xs text-zinc-500">
+                    <Phone className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span>{member.phone}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-xs text-zinc-500">
+                  <Home className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>
+                    {member.flat
+                      ? `Flat ${member.flat.wing ? member.flat.wing + "-" : ""}${member.flat.flat_number}`
+                      : "No flat"}
+                  </span>
+                </div>
+                {!member.last_login_at && (
+                  <div className="flex items-center gap-2 text-xs text-amber-600">
+                    <UserCheck className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span>Never logged in</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-700">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-8 text-xs"
+                  onClick={() => {
+                    setSelectedMember(member);
+                    setEditForm({
+                      full_name: member.full_name,
+                      phone: member.phone || "",
+                      role: member.role,
+                      flat_id: "",
+                      status: member.status,
+                      is_owner: member.is_owner,
+                    });
+                    setShowEditModal(true);
+                  }}
+                >
+                  <Edit2 className="h-3 w-3 mr-1" />
+                  Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                  onClick={() => {
+                    setSelectedMember(member);
+                    setShowDeleteDialog(true);
+                  }}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* ── ADD MEMBER MODAL ─────────────────────────────────── */}
+      <Pagination
+        page={page}
+        totalPages={pagination.totalPages}
+        hasNext={pagination.hasNext}
+        hasPrev={pagination.hasPrev}
+        onNext={() => setPage(page + 1)}
+        onPrev={() => setPage(page - 1)}
+        total={pagination.total}
+        limit={12}
+      />
+
+      {/* Add Modal */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Member</DialogTitle>
             <DialogDescription>
-              Add a new resident or committee member to your society
+              Add a resident or committee member
             </DialogDescription>
           </DialogHeader>
-
-          <form onSubmit={handleAddMember} className="space-y-4 mt-2">
-            {/* Full Name */}
+          <form onSubmit={handleAdd} className="space-y-4 mt-2">
             <div className="space-y-2">
               <Label>Full Name *</Label>
               <Input
-                placeholder="e.g. Ramesh Kumar Sharma"
+                placeholder="Full name"
                 value={addForm.full_name}
                 onChange={(e) =>
-                  setAddForm({
-                    ...addForm,
-                    full_name: e.target.value,
-                  })
+                  setAddForm({ ...addForm, full_name: e.target.value })
                 }
                 required
               />
             </div>
-
-            {/* Email */}
             <div className="space-y-2">
-              <Label>Email Address *</Label>
+              <Label>Email *</Label>
               <Input
                 type="email"
-                placeholder="member@example.com"
+                placeholder="email@example.com"
                 value={addForm.email}
                 onChange={(e) =>
-                  setAddForm({
-                    ...addForm,
-                    email: e.target.value,
-                  })
+                  setAddForm({ ...addForm, email: e.target.value })
                 }
                 required
               />
-              <p className="text-xs text-muted-foreground">
-                Member will use this email to login via OTP
-              </p>
+              <p className="text-xs text-zinc-400">Used for OTP login</p>
             </div>
-
-            {/* Phone */}
             <div className="space-y-2">
-              <Label>Phone Number</Label>
+              <Label>Phone</Label>
               <Input
                 placeholder="+91 98765 43210"
                 value={addForm.phone}
                 onChange={(e) =>
-                  setAddForm({
-                    ...addForm,
-                    phone: e.target.value,
-                  })
+                  setAddForm({ ...addForm, phone: e.target.value })
                 }
               />
             </div>
-
-            {/* Role + Flat Row */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Role *</Label>
@@ -743,9 +520,8 @@ export default function MembersPage() {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-2">
-                <Label>Assign Flat</Label>
+                <Label>Flat</Label>
                 <Select
                   value={addForm.flat_id}
                   onValueChange={(v) => setAddForm({ ...addForm, flat_id: v })}
@@ -755,46 +531,25 @@ export default function MembersPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No flat</SelectItem>
-                    {flats.map((flat) => (
-                      <SelectItem key={flat.id} value={flat.id}>
-                        {getFlatLabel(flat)}
+                    {flats.map((f) => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {getFlatLabel(f)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-
-            {/* Move In Date */}
-            <div className="space-y-2">
-              <Label>Move-in Date</Label>
-              <Input
-                type="date"
-                value={addForm.move_in_date}
-                onChange={(e) =>
-                  setAddForm({
-                    ...addForm,
-                    move_in_date: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Is Owner Toggle */}
             <div className="flex items-center justify-between rounded-xl border p-4">
               <div>
                 <p className="text-sm font-medium">Property Owner</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Is this person the owner of the flat?
-                </p>
+                <p className="text-xs text-zinc-400">Is this the owner?</p>
               </div>
               <Switch
                 checked={addForm.is_owner}
                 onCheckedChange={(v) => setAddForm({ ...addForm, is_owner: v })}
               />
             </div>
-
-            {/* Submit Buttons */}
             <div className="flex gap-3 pt-2">
               <Button
                 type="button"
@@ -805,64 +560,41 @@ export default function MembersPage() {
                 Cancel
               </Button>
               <Button type="submit" className="flex-1" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <LoadingSpinner size="sm" className="mr-2" />
-                    Adding...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Member
-                  </>
-                )}
+                {isSubmitting ? "Adding..." : "Add Member"}
               </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* ── EDIT MEMBER MODAL ────────────────────────────────── */}
+      {/* Edit Modal */}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Member</DialogTitle>
             <DialogDescription>
-              Update details for{" "}
-              <span className="font-semibold">{selectedMember?.full_name}</span>
+              Update {selectedMember?.full_name}
             </DialogDescription>
           </DialogHeader>
-
-          <form onSubmit={handleEditMember} className="space-y-4 mt-2">
-            {/* Full Name */}
+          <form onSubmit={handleEdit} className="space-y-4 mt-2">
             <div className="space-y-2">
               <Label>Full Name</Label>
               <Input
                 value={editForm.full_name}
                 onChange={(e) =>
-                  setEditForm({
-                    ...editForm,
-                    full_name: e.target.value,
-                  })
+                  setEditForm({ ...editForm, full_name: e.target.value })
                 }
               />
             </div>
-
-            {/* Phone */}
             <div className="space-y-2">
-              <Label>Phone Number</Label>
+              <Label>Phone</Label>
               <Input
                 value={editForm.phone}
                 onChange={(e) =>
-                  setEditForm({
-                    ...editForm,
-                    phone: e.target.value,
-                  })
+                  setEditForm({ ...editForm, phone: e.target.value })
                 }
               />
             </div>
-
-            {/* Role + Status Row */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Role</Label>
@@ -881,7 +613,6 @@ export default function MembersPage() {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-2">
                 <Label>Status</Label>
                 <Select
@@ -899,35 +630,9 @@ export default function MembersPage() {
                 </Select>
               </div>
             </div>
-
-            {/* Flat Assignment */}
-            <div className="space-y-2">
-              <Label>Assigned Flat</Label>
-              <Select
-                value={editForm.flat_id || "none"}
-                onValueChange={(v) => setEditForm({ ...editForm, flat_id: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No flat assigned</SelectItem>
-                  {flats.map((flat) => (
-                    <SelectItem key={flat.id} value={flat.id}>
-                      {getFlatLabel(flat)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Owner Toggle */}
             <div className="flex items-center justify-between rounded-xl border p-4">
               <div>
                 <p className="text-sm font-medium">Property Owner</p>
-                <p className="text-xs text-muted-foreground">
-                  Toggle if ownership status changed
-                </p>
               </div>
               <Switch
                 checked={editForm.is_owner}
@@ -936,8 +641,6 @@ export default function MembersPage() {
                 }
               />
             </div>
-
-            {/* Submit Buttons */}
             <div className="flex gap-3 pt-2">
               <Button
                 type="button"
@@ -955,28 +658,21 @@ export default function MembersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── DELETE CONFIRMATION ───────────────────────────────── */}
+      {/* Delete Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove Member?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove{" "}
-              <span className="font-semibold text-zinc-900">
-                {selectedMember?.full_name}
-              </span>{" "}
-              from the society?
-              <br />
-              <br />
-              This will deactivate their account and they will no longer be able
-              to login. Their historical data (bills, complaints) will be
-              preserved.
+              Remove{" "}
+              <span className="font-semibold">{selectedMember?.full_name}</span>{" "}
+              from the society? Their historical data will be preserved.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteMember}
+              onClick={handleDelete}
               className="bg-red-600 hover:bg-red-700"
             >
               <Trash2 className="h-4 w-4 mr-2" />

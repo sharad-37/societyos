@@ -1,44 +1,19 @@
-// src/app/(dashboard)/committee/notices/page.tsx
+// src/app/(dashboard)/committee/complaints/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import {
-  Bell,
-  Plus,
-  Pin,
-  AlertTriangle,
-  Eye,
-  Trash2,
-  RefreshCw,
-  Tag,
+  MessageSquare,
+  CheckCircle,
   Clock,
-  Users,
+  AlertTriangle,
+  RefreshCw,
+  ChevronDown,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -46,61 +21,64 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
-import { EmptyState } from "@/components/shared/EmptyState";
-import { StatsCard } from "@/components/shared/StatsCard";
+import { DataTable } from "@/components/shared/DataTable";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Pagination } from "@/components/shared/Pagination";
-import { formatDate } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import {
+  AppleStatsCard,
+  AppleCardSkeleton,
+} from "@/components/ui/apple-components";
+import { formatDateShort } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────
-interface Notice {
+interface Complaint {
   id: string;
-  title: string;
-  content: string;
+  complaint_number: string;
   category: string;
-  is_pinned: boolean;
-  is_urgent: boolean;
+  priority: string;
+  title: string;
+  description: string;
+  status: string;
+  location: string | null;
   created_at: string;
-  expires_at: string | null;
-  author: { full_name: string };
-  views: { id: string }[];
+  resolved_at: string | null;
+  sla_breached: boolean;
+  raised_by_user: {
+    full_name: string;
+    flat: { flat_number: string } | null;
+  } | null;
+  assigned_to_user: { full_name: string } | null;
+  updates: any[];
 }
 
-// ─── Constants ────────────────────────────────────────────────
-const CATEGORY_CONFIG: Record<string, { color: string; emoji: string }> = {
-  GENERAL: { color: "bg-zinc-100 text-zinc-700", emoji: "📢" },
-  MAINTENANCE: {
-    color: "bg-blue-100 text-blue-700",
-    emoji: "🔧",
-  },
-  MEETING: {
-    color: "bg-purple-100 text-purple-700",
-    emoji: "👥",
-  },
-  EMERGENCY: { color: "bg-red-100 text-red-700", emoji: "🚨" },
-  FINANCIAL: {
-    color: "bg-green-100 text-green-700",
-    emoji: "💰",
-  },
-  LEGAL: {
-    color: "bg-yellow-100 text-yellow-700",
-    emoji: "⚖️",
-  },
-  EVENT: { color: "bg-pink-100 text-pink-700", emoji: "🎉" },
+// ─── Status Flow ──────────────────────────────────────────────
+const STATUS_FLOW: Record<string, string[]> = {
+  OPEN: ["ASSIGNED", "REJECTED"],
+  ASSIGNED: ["IN_PROGRESS", "OPEN"],
+  IN_PROGRESS: ["RESOLVED", "ASSIGNED"],
+  RESOLVED: ["CLOSED"],
+  CLOSED: [],
+  REJECTED: [],
 };
 
 // ─── Component ────────────────────────────────────────────────
-export default function CommitteeNoticesPage() {
+export default function CommitteeComplaintsPage() {
   // ── State ──────────────────────────────────────────────────
-  const [notices, setNotices] = useState<Notice[]>([]);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(
+    null,
+  );
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [priorityFilter, setPriorityFilter] = useState("ALL");
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({
     total: 0,
@@ -109,321 +87,328 @@ export default function CommitteeNoticesPage() {
     hasPrev: false,
   });
   const [stats, setStats] = useState({
-    total: 0,
-    pinned: 0,
+    open: 0,
+    inProgress: 0,
+    resolved: 0,
     urgent: 0,
-    thisMonth: 0,
   });
 
-  // Form state
-  const [form, setForm] = useState({
-    title: "",
-    content: "",
-    category: "GENERAL",
-    is_pinned: false,
-    is_urgent: false,
-    expires_at: "",
+  // Update form
+  const [updateForm, setUpdateForm] = useState({
+    newStatus: "",
+    note: "",
   });
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState("");
 
   // ── Effects ────────────────────────────────────────────────
   useEffect(() => {
-    fetchNotices();
-  }, [categoryFilter, page]);
+    fetchComplaints();
+  }, [statusFilter, priorityFilter, page]);
 
   // ── Fetch ──────────────────────────────────────────────────
-  const fetchNotices = async () => {
+  const fetchComplaints = async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams({
         page: String(page),
-        limit: "10",
-        ...(categoryFilter !== "ALL" && {
-          category: categoryFilter,
-        }),
+        limit: "15",
+        ...(statusFilter !== "ALL" && { status: statusFilter }),
+        ...(priorityFilter !== "ALL" && { priority: priorityFilter }),
       });
 
-      const response = await fetch(`/api/notices?${params}`);
+      const response = await fetch(`/api/complaints?${params}`);
       const data = await response.json();
 
       if (data.success) {
-        const allNotices: Notice[] = data.data || [];
-        setNotices(allNotices);
+        const allComplaints: Complaint[] = data.data || [];
+        setComplaints(allComplaints);
         setPagination({
           total: data.pagination?.total || 0,
           totalPages: data.pagination?.totalPages || 1,
           hasNext: data.pagination?.hasNext || false,
           hasPrev: data.pagination?.hasPrev || false,
         });
-
-        const thisMonth = new Date().getMonth();
         setStats({
-          total: data.pagination?.total || 0,
-          pinned: allNotices.filter((n) => n.is_pinned).length,
-          urgent: allNotices.filter((n) => n.is_urgent).length,
-          thisMonth: allNotices.filter(
-            (n) => new Date(n.created_at).getMonth() === thisMonth,
+          open: allComplaints.filter((c) => c.status === "OPEN").length,
+          inProgress: allComplaints.filter((c) =>
+            ["IN_PROGRESS", "ASSIGNED"].includes(c.status),
           ).length,
+          resolved: allComplaints.filter((c) =>
+            ["RESOLVED", "CLOSED"].includes(c.status),
+          ).length,
+          urgent: allComplaints.filter((c) => c.priority === "URGENT").length,
         });
       }
-    } catch {
-      toast.error("Failed to load notices");
+    } catch (error) {
+      console.error("Failed to fetch complaints:", error);
+      toast.error("Failed to load complaints");
     } finally {
       setIsLoading(false);
     }
   };
 
   // ── Handlers ───────────────────────────────────────────────
-  const handleCreateNotice = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleOpenDetail = (complaint: Complaint) => {
+    setSelectedComplaint(complaint);
+    setUpdateForm({ newStatus: complaint.status, note: "" });
+    setUpdateError("");
+    setShowDetailModal(true);
+  };
 
-    if (!form.title.trim() || !form.content.trim()) {
-      toast.error("Title and content are required");
-      return;
-    }
+  const handleUpdateStatus = async () => {
+    if (!selectedComplaint) return;
+    setIsUpdating(true);
+    setUpdateError("");
 
-    setIsSubmitting(true);
     try {
-      const response = await fetch("/api/notices", {
-        method: "POST",
+      const response = await fetch(`/api/complaints/${selectedComplaint.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...form,
-          expires_at: form.expires_at || undefined,
+          status: updateForm.newStatus,
+          note: updateForm.note,
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        toast.success("Notice posted successfully! 📢");
-        setShowCreateModal(false);
-        setForm({
-          title: "",
-          content: "",
-          category: "GENERAL",
-          is_pinned: false,
-          is_urgent: false,
-          expires_at: "",
-        });
-        fetchNotices();
+        toast.success("Complaint updated successfully");
+        setShowDetailModal(false);
+        setSelectedComplaint(null);
+        fetchComplaints();
       } else {
-        toast.error(data.message || "Failed to post notice");
+        setUpdateError(data.message || "Failed to update complaint");
+        toast.error(data.message || "Failed to update");
       }
     } catch {
+      setUpdateError("Network error. Please try again.");
       toast.error("Network error");
     } finally {
-      setIsSubmitting(false);
+      setIsUpdating(false);
     }
   };
 
-  const handleDeleteNotice = async () => {
-    if (!selectedNotice) return;
+  // ── Table Columns ──────────────────────────────────────────
+  const columns = [
+    {
+      key: "complaint_number",
+      label: "ID",
+      render: (c: Complaint) => (
+        <span className="font-mono text-xs text-muted-foreground">
+          {c.complaint_number}
+        </span>
+      ),
+    },
+    {
+      key: "flat",
+      label: "Flat",
+      render: (c: Complaint) => (
+        <div>
+          <p className="text-sm font-medium">
+            {c.raised_by_user?.flat?.flat_number || "N/A"}
+          </p>
+          <p className="text-xs text-muted-foreground truncate max-w-[100px]">
+            {c.raised_by_user?.full_name || "Unknown"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "title",
+      label: "Issue",
+      render: (c: Complaint) => (
+        <div className="max-w-[200px]">
+          <p className="text-sm font-medium line-clamp-1">{c.title}</p>
+          <p className="text-xs text-muted-foreground capitalize">
+            {c.category.toLowerCase()}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "priority",
+      label: "Priority",
+      render: (c: Complaint) => (
+        <div className="flex flex-col gap-1">
+          <StatusBadge status={c.priority} type="complaint-priority" />
+          {c.sla_breached && (
+            <span className="text-xs text-red-600 font-medium">
+              SLA breached
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (c: Complaint) => (
+        <StatusBadge status={c.status} type="complaint-status" />
+      ),
+    },
+    {
+      key: "assigned",
+      label: "Assigned To",
+      render: (c: Complaint) => (
+        <span className="text-sm text-muted-foreground">
+          {c.assigned_to_user?.full_name || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "created_at",
+      label: "Raised On",
+      render: (c: Complaint) => (
+        <span className="text-xs text-muted-foreground">
+          {formatDateShort(c.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      label: "",
+      render: (c: Complaint) => (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs"
+          onClick={() => handleOpenDetail(c)}
+          disabled={c.status === "CLOSED" || c.status === "REJECTED"}
+        >
+          Manage
+          <ChevronDown className="h-3 w-3 ml-1" />
+        </Button>
+      ),
+    },
+  ];
 
-    try {
-      const response = await fetch(`/api/notices/${selectedNotice.id}`, {
-        method: "DELETE",
-      });
-      const data = await response.json();
-
-      if (data.success) {
-        toast.success("Notice deleted successfully");
-        setShowDeleteDialog(false);
-        setSelectedNotice(null);
-        fetchNotices();
-      } else {
-        toast.error(data.message || "Failed to delete notice");
-      }
-    } catch {
-      toast.error("Network error");
-    }
-  };
+  // Available next statuses for selected complaint
+  const availableStatuses = selectedComplaint
+    ? STATUS_FLOW[selectedComplaint.status] || []
+    : [];
 
   // ── Render ─────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       {/* Header */}
       <PageHeader
-        title="Notice Board"
-        description="Post and manage society announcements"
-        icon={Bell}
+        title="Complaint Management"
+        description="Track and resolve resident complaints"
+        icon={MessageSquare}
         action={
-          <Button onClick={() => setShowCreateModal(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Post Notice
+          <Button variant="outline" size="sm" onClick={() => fetchComplaints()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
           </Button>
         }
       />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatsCard
-          title="Total Notices"
-          value={stats.total}
-          icon={Bell}
-          color="blue"
-          subtitle="All time"
-        />
-        <StatsCard
-          title="Pinned"
-          value={stats.pinned}
-          icon={Pin}
-          color="default"
-          subtitle="Always on top"
-        />
-        <StatsCard
-          title="Urgent"
-          value={stats.urgent}
-          icon={AlertTriangle}
-          color={stats.urgent > 0 ? "red" : "green"}
-          subtitle="High priority"
-        />
-        <StatsCard
-          title="This Month"
-          value={stats.thisMonth}
-          icon={Clock}
-          color="yellow"
-          subtitle="Posted recently"
-        />
-      </div>
-
-      {/* Filter */}
-      <div className="flex items-center gap-3">
-        <Select
-          value={categoryFilter}
-          onValueChange={(v) => {
-            setCategoryFilter(v);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Filter by category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">All Categories</SelectItem>
-            {Object.entries(CATEGORY_CONFIG).map(([key, val]) => (
-              <SelectItem key={key} value={key}>
-                {val.emoji} {key.charAt(0) + key.slice(1).toLowerCase()}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button variant="outline" size="icon" onClick={() => fetchNotices()}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* Notices List */}
       {isLoading ? (
-        <div className="flex h-48 items-center justify-center">
-          <LoadingSpinner size="lg" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <AppleCardSkeleton key={i} />
+          ))}
         </div>
-      ) : notices.length === 0 ? (
-        <EmptyState
-          icon={Bell}
-          title="No notices yet"
-          description="Post your first notice to keep residents informed"
-          action={
-            <Button onClick={() => setShowCreateModal(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Post First Notice
-            </Button>
-          }
-        />
       ) : (
-        <div className="space-y-3">
-          {notices.map((notice) => {
-            const catConfig =
-              CATEGORY_CONFIG[notice.category] || CATEGORY_CONFIG.GENERAL;
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <AppleStatsCard
+            label="Open"
+            value={stats.open}
+            icon={AlertTriangle}
+            iconColor={stats.open > 0 ? "bg-red-500" : "bg-green-500"}
+            sublabel="Need attention"
+          />
+          <AppleStatsCard
+            label="In Progress"
+            value={stats.inProgress}
+            icon={Clock}
+            iconColor="bg-amber-500"
+            sublabel="Being resolved"
+          />
+          <AppleStatsCard
+            label="Resolved"
+            value={stats.resolved}
+            icon={CheckCircle}
+            iconColor="bg-green-500"
+            sublabel="Completed"
+          />
+          <AppleStatsCard
+            label="Urgent"
+            value={stats.urgent}
+            icon={AlertTriangle}
+            iconColor={stats.urgent > 0 ? "bg-red-500" : "bg-green-500"}
+            sublabel="High priority"
+          />
+        </div>
+      )}
 
-            return (
-              <Card
-                key={notice.id}
-                className={cn(
-                  "hover:shadow-sm transition-shadow",
-                  notice.is_urgent && "border-red-200 bg-red-50/30",
-                  notice.is_pinned && "border-zinc-300",
-                )}
-              >
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    {/* Left Content */}
-                    <div className="flex-1 min-w-0">
-                      {/* Title + Badges */}
-                      <div className="flex items-start gap-2 flex-wrap mb-2">
-                        <h3 className="text-sm font-semibold text-zinc-900">
-                          {notice.title}
-                        </h3>
-                        {notice.is_pinned && (
-                          <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
-                            <Pin className="h-3 w-3" />
-                            Pinned
-                          </span>
-                        )}
-                        {notice.is_urgent && (
-                          <span className="inline-flex items-center rounded-full bg-red-100 border border-red-200 px-2 py-0.5 text-xs font-semibold text-red-700">
-                            <AlertTriangle className="h-2.5 w-2.5 mr-1" />
-                            Urgent
-                          </span>
-                        )}
-                      </div>
+      {/* Filters + Table */}
+      <div className="apple-card overflow-hidden">
+        <div className="p-5 pb-4 flex items-center justify-between flex-wrap gap-3 border-b border-zinc-100 dark:border-zinc-700/50">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
+            All Complaints
+            {pagination.total > 0 && (
+              <span className="ml-2 text-xs font-normal text-zinc-400">
+                ({pagination.total} total)
+              </span>
+            )}
+          </h3>
 
-                      {/* Content preview */}
-                      <p className="text-xs text-zinc-600 line-clamp-2 mb-3">
-                        {notice.content}
-                      </p>
+          <div className="flex items-center gap-2">
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                setStatusFilter(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-32 h-8 text-sm">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Status</SelectItem>
+                <SelectItem value="OPEN">Open</SelectItem>
+                <SelectItem value="ASSIGNED">Assigned</SelectItem>
+                <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                <SelectItem value="RESOLVED">Resolved</SelectItem>
+                <SelectItem value="CLOSED">Closed</SelectItem>
+                <SelectItem value="REJECTED">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
 
-                      {/* Meta row */}
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                            catConfig.color,
-                          )}
-                        >
-                          {catConfig.emoji}{" "}
-                          {notice.category.charAt(0) +
-                            notice.category.slice(1).toLowerCase()}
-                        </span>
+            <Select
+              value={priorityFilter}
+              onValueChange={(v) => {
+                setPriorityFilter(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-32 h-8 text-sm">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Priority</SelectItem>
+                <SelectItem value="URGENT">Urgent</SelectItem>
+                <SelectItem value="HIGH">High</SelectItem>
+                <SelectItem value="MEDIUM">Medium</SelectItem>
+                <SelectItem value="LOW">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Clock className="h-3 w-3" />
-                          {formatDate(notice.created_at)}
-                        </span>
-
-                        <span className="text-xs text-muted-foreground">
-                          By {notice.author?.full_name}
-                        </span>
-
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Eye className="h-3 w-3" />
-                          {notice.views?.length || 0} views
-                        </span>
-
-                        {notice.expires_at && (
-                          <span className="text-xs text-amber-600">
-                            Expires: {formatDate(notice.expires_at)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Delete Button */}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 flex-shrink-0"
-                      onClick={() => {
-                        setSelectedNotice(notice);
-                        setShowDeleteDialog(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+        <div className="p-5">
+          <DataTable
+            data={complaints}
+            columns={columns}
+            isLoading={isLoading}
+            keyExtractor={(c) => c.id}
+            emptyTitle="No complaints found"
+            emptyDescription="All complaints will appear here"
+          />
 
           <Pagination
             page={page}
@@ -433,213 +418,179 @@ export default function CommitteeNoticesPage() {
             onNext={() => setPage(page + 1)}
             onPrev={() => setPage(page - 1)}
             total={pagination.total}
-            limit={10}
+            limit={15}
           />
         </div>
-      )}
+      </div>
 
-      {/* ── CREATE NOTICE MODAL ───────────────────────────────── */}
-      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      {/* ── Complaint Detail Modal ──────────────────────────── */}
+      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Post New Notice</DialogTitle>
-            <DialogDescription>
-              Create an announcement for all residents
-            </DialogDescription>
+            <DialogTitle>{selectedComplaint?.complaint_number}</DialogTitle>
           </DialogHeader>
 
-          <form onSubmit={handleCreateNotice} className="space-y-4 mt-2">
-            {/* Title */}
-            <div className="space-y-2">
-              <Label>Notice Title *</Label>
-              <Input
-                placeholder="e.g. Monthly Society Meeting — July 2024"
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                required
-                maxLength={300}
-              />
-            </div>
-
-            {/* Category */}
-            <div className="space-y-2">
-              <Label>Category *</Label>
-              <Select
-                value={form.category}
-                onValueChange={(v) => setForm({ ...form, category: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(CATEGORY_CONFIG).map(([key, val]) => (
-                    <SelectItem key={key} value={key}>
-                      {val.emoji} {key.charAt(0) + key.slice(1).toLowerCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Content */}
-            <div className="space-y-2">
-              <Label>Content *</Label>
-              <Textarea
-                placeholder="Write your notice here. Be clear and concise..."
-                value={form.content}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    content: e.target.value,
-                  })
-                }
-                rows={5}
-                required
-              />
-              <p className="text-xs text-muted-foreground text-right">
-                {form.content.length} characters
-              </p>
-            </div>
-
-            {/* Expiry Date */}
-            <div className="space-y-2">
-              <Label>Expiry Date (Optional)</Label>
-              <Input
-                type="datetime-local"
-                value={form.expires_at}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    expires_at: e.target.value,
-                  })
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                Notice will be hidden after this date
-              </p>
-            </div>
-
-            {/* Toggles */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between rounded-xl border p-4">
+          {selectedComplaint && (
+            <div className="space-y-4">
+              {/* Complaint Details */}
+              <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 p-4 space-y-3">
                 <div>
-                  <p className="text-sm font-medium flex items-center gap-2">
-                    <Pin className="h-3.5 w-3.5" />
-                    Pin Notice
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Always shows at top of notice board
+                  <p className="text-xs text-muted-foreground">Issue</p>
+                  <p className="text-sm font-semibold mt-0.5">
+                    {selectedComplaint.title}
                   </p>
                 </div>
-                <Switch
-                  checked={form.is_pinned}
-                  onCheckedChange={(v) => setForm({ ...form, is_pinned: v })}
-                />
-              </div>
 
-              <div className="flex items-center justify-between rounded-xl border border-red-100 p-4">
                 <div>
-                  <p className="text-sm font-medium flex items-center gap-2 text-red-700">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    Mark as Urgent
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Highlighted in red — for emergencies only
+                  <p className="text-xs text-muted-foreground">Description</p>
+                  <p className="text-sm mt-0.5 text-zinc-700 dark:text-zinc-300">
+                    {selectedComplaint.description}
                   </p>
                 </div>
-                <Switch
-                  checked={form.is_urgent}
-                  onCheckedChange={(v) => setForm({ ...form, is_urgent: v })}
-                />
-              </div>
-            </div>
 
-            {/* Preview */}
-            {form.title && (
-              <div className="rounded-xl bg-zinc-50 border p-4">
-                <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">
-                  Preview
-                </p>
-                <div className="flex items-start gap-2">
-                  <span className="text-lg">
-                    {CATEGORY_CONFIG[form.category]?.emoji}
-                  </span>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-sm font-semibold">{form.title}</p>
-                    {form.content && (
-                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                        {form.content}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-2 mt-1">
-                      {form.is_pinned && (
-                        <span className="text-xs text-zinc-500">📌 Pinned</span>
-                      )}
-                      {form.is_urgent && (
-                        <span className="text-xs text-red-600 font-medium">
-                          🚨 Urgent
-                        </span>
-                      )}
-                    </div>
+                    <p className="text-xs text-muted-foreground">Raised By</p>
+                    <p className="text-sm font-medium mt-0.5">
+                      {selectedComplaint.raised_by_user?.full_name || "Unknown"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Flat{" "}
+                      {selectedComplaint.raised_by_user?.flat?.flat_number ||
+                        "N/A"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Raised On</p>
+                    <p className="text-sm font-medium mt-0.5">
+                      {formatDateShort(selectedComplaint.created_at)}
+                    </p>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {/* Buttons */}
-            <div className="flex gap-3 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => setShowCreateModal(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" className="flex-1" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <LoadingSpinner size="sm" className="mr-2" />
-                    Posting...
-                  </>
-                ) : (
-                  <>
-                    <Bell className="h-4 w-4 mr-2" />
-                    Post Notice
-                  </>
+                {selectedComplaint.location && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Location</p>
+                    <p className="text-sm mt-0.5">
+                      {selectedComplaint.location}
+                    </p>
+                  </div>
                 )}
-              </Button>
+
+                <div className="flex items-center gap-2">
+                  <StatusBadge
+                    status={selectedComplaint.priority}
+                    type="complaint-priority"
+                  />
+                  <StatusBadge
+                    status={selectedComplaint.status}
+                    type="complaint-status"
+                  />
+                </div>
+
+                {selectedComplaint.assigned_to_user && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Assigned To</p>
+                    <p className="text-sm font-medium mt-0.5">
+                      {selectedComplaint.assigned_to_user.full_name}
+                    </p>
+                  </div>
+                )}
+
+                {selectedComplaint.resolved_at && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Resolved On</p>
+                    <p className="text-sm font-medium mt-0.5 text-green-600">
+                      {formatDateShort(selectedComplaint.resolved_at)}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Status Update Form */}
+              {availableStatuses.length > 0 ? (
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Update Status</Label>
+
+                  <Select
+                    value={updateForm.newStatus}
+                    onValueChange={(v) =>
+                      setUpdateForm({ ...updateForm, newStatus: v })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={selectedComplaint.status}>
+                        {selectedComplaint.status.replace(/_/g, " ")} (Current)
+                      </SelectItem>
+                      {availableStatuses.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          → {status.replace(/_/g, " ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm">Note (Optional)</Label>
+                    <Textarea
+                      placeholder="Add a note about this status update..."
+                      value={updateForm.note}
+                      onChange={(e) =>
+                        setUpdateForm({
+                          ...updateForm,
+                          note: e.target.value,
+                        })
+                      }
+                      rows={3}
+                    />
+                  </div>
+
+                  {/* Error */}
+                  {updateError && (
+                    <div className="rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 p-3">
+                      <p className="text-sm text-red-600 dark:text-red-400">
+                        {updateError}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Buttons */}
+                  <div className="flex gap-3 pt-1">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setShowDetailModal(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleUpdateStatus}
+                      disabled={
+                        isUpdating ||
+                        updateForm.newStatus === selectedComplaint.status
+                      }
+                    >
+                      {isUpdating ? "Updating..." : "Update Status"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 p-4 text-center">
+                  <CheckCircle className="h-6 w-6 text-green-500 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    This complaint is{" "}
+                    {selectedComplaint.status.toLowerCase().replace(/_/g, " ")}
+                  </p>
+                </div>
+              )}
             </div>
-          </form>
+          )}
         </DialogContent>
       </Dialog>
-
-      {/* ── DELETE CONFIRMATION ───────────────────────────────── */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Notice?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete{" "}
-              <span className="font-semibold text-zinc-900">
-                &quot;{selectedNotice?.title}&quot;
-              </span>
-              ? This action cannot be undone and residents will no longer see
-              this notice.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteNotice}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Notice
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

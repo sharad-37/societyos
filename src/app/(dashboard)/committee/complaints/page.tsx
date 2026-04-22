@@ -2,25 +2,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import {
   MessageSquare,
   CheckCircle,
   Clock,
   AlertTriangle,
-  User,
   RefreshCw,
   ChevronDown,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -28,13 +21,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { StatsCard } from "@/components/shared/StatsCard";
 import { Pagination } from "@/components/shared/Pagination";
+import {
+  AppleStatsCard,
+  AppleCardSkeleton,
+} from "@/components/ui/apple-components";
 import { formatDateShort } from "@/lib/utils";
 
+// ─── Types ────────────────────────────────────────────────────
 interface Complaint {
   id: string;
   complaint_number: string;
@@ -50,11 +53,12 @@ interface Complaint {
   raised_by_user: {
     full_name: string;
     flat: { flat_number: string } | null;
-  };
+  } | null;
   assigned_to_user: { full_name: string } | null;
   updates: any[];
 }
 
+// ─── Status Flow ──────────────────────────────────────────────
 const STATUS_FLOW: Record<string, string[]> = {
   OPEN: ["ASSIGNED", "REJECTED"],
   ASSIGNED: ["IN_PROGRESS", "OPEN"],
@@ -64,7 +68,9 @@ const STATUS_FLOW: Record<string, string[]> = {
   REJECTED: [],
 };
 
+// ─── Component ────────────────────────────────────────────────
 export default function CommitteeComplaintsPage() {
+  // ── State ──────────────────────────────────────────────────
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(
@@ -95,10 +101,12 @@ export default function CommitteeComplaintsPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateError, setUpdateError] = useState("");
 
+  // ── Effects ────────────────────────────────────────────────
   useEffect(() => {
     fetchComplaints();
   }, [statusFilter, priorityFilter, page]);
 
+  // ── Fetch ──────────────────────────────────────────────────
   const fetchComplaints = async () => {
     setIsLoading(true);
     try {
@@ -113,7 +121,7 @@ export default function CommitteeComplaintsPage() {
       const data = await response.json();
 
       if (data.success) {
-        const allComplaints = data.data || [];
+        const allComplaints: Complaint[] = data.data || [];
         setComplaints(allComplaints);
         setPagination({
           total: data.pagination?.total || 0,
@@ -121,35 +129,29 @@ export default function CommitteeComplaintsPage() {
           hasNext: data.pagination?.hasNext || false,
           hasPrev: data.pagination?.hasPrev || false,
         });
-
         setStats({
-          open: allComplaints.filter((c: Complaint) => c.status === "OPEN")
-            .length,
-          inProgress: allComplaints.filter(
-            (c: Complaint) =>
-              c.status === "IN_PROGRESS" || c.status === "ASSIGNED",
+          open: allComplaints.filter((c) => c.status === "OPEN").length,
+          inProgress: allComplaints.filter((c) =>
+            ["IN_PROGRESS", "ASSIGNED"].includes(c.status),
           ).length,
-          resolved: allComplaints.filter(
-            (c: Complaint) => c.status === "RESOLVED" || c.status === "CLOSED",
+          resolved: allComplaints.filter((c) =>
+            ["RESOLVED", "CLOSED"].includes(c.status),
           ).length,
-          urgent: allComplaints.filter(
-            (c: Complaint) => c.priority === "URGENT",
-          ).length,
+          urgent: allComplaints.filter((c) => c.priority === "URGENT").length,
         });
       }
     } catch (error) {
       console.error("Failed to fetch complaints:", error);
+      toast.error("Failed to load complaints");
     } finally {
       setIsLoading(false);
     }
   };
 
+  // ── Handlers ───────────────────────────────────────────────
   const handleOpenDetail = (complaint: Complaint) => {
     setSelectedComplaint(complaint);
-    setUpdateForm({
-      newStatus: complaint.status,
-      note: "",
-    });
+    setUpdateForm({ newStatus: complaint.status, note: "" });
     setUpdateError("");
     setShowDetailModal(true);
   };
@@ -172,18 +174,23 @@ export default function CommitteeComplaintsPage() {
       const data = await response.json();
 
       if (data.success) {
+        toast.success("Complaint updated successfully");
         setShowDetailModal(false);
+        setSelectedComplaint(null);
         fetchComplaints();
       } else {
         setUpdateError(data.message || "Failed to update complaint");
+        toast.error(data.message || "Failed to update");
       }
     } catch {
       setUpdateError("Network error. Please try again.");
+      toast.error("Network error");
     } finally {
       setIsUpdating(false);
     }
   };
 
+  // ── Table Columns ──────────────────────────────────────────
   const columns = [
     {
       key: "complaint_number",
@@ -203,7 +210,7 @@ export default function CommitteeComplaintsPage() {
             {c.raised_by_user?.flat?.flat_number || "N/A"}
           </p>
           <p className="text-xs text-muted-foreground truncate max-w-[100px]">
-            {c.raised_by_user?.full_name}
+            {c.raised_by_user?.full_name || "Unknown"}
           </p>
         </div>
       ),
@@ -277,18 +284,21 @@ export default function CommitteeComplaintsPage() {
     },
   ];
 
+  // Available next statuses for selected complaint
   const availableStatuses = selectedComplaint
     ? STATUS_FLOW[selectedComplaint.status] || []
     : [];
 
+  // ── Render ─────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+      {/* Header */}
       <PageHeader
         title="Complaint Management"
         description="Track and resolve resident complaints"
         icon={MessageSquare}
         action={
-          <Button variant="outline" size="sm" onClick={fetchComplaints}>
+          <Button variant="outline" size="sm" onClick={() => fetchComplaints()}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
@@ -296,88 +306,101 @@ export default function CommitteeComplaintsPage() {
       />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatsCard
-          title="Open"
-          value={stats.open}
-          icon={AlertTriangle}
-          color={stats.open > 0 ? "red" : "green"}
-          subtitle="Need attention"
-        />
-        <StatsCard
-          title="In Progress"
-          value={stats.inProgress}
-          icon={Clock}
-          color="yellow"
-          subtitle="Being resolved"
-        />
-        <StatsCard
-          title="Resolved"
-          value={stats.resolved}
-          icon={CheckCircle}
-          color="green"
-          subtitle="Completed"
-        />
-        <StatsCard
-          title="Urgent"
-          value={stats.urgent}
-          icon={AlertTriangle}
-          color={stats.urgent > 0 ? "red" : "green"}
-          subtitle="High priority"
-        />
-      </div>
+      {isLoading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <AppleCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <AppleStatsCard
+            label="Open"
+            value={stats.open}
+            icon={AlertTriangle}
+            iconColor={stats.open > 0 ? "bg-red-500" : "bg-green-500"}
+            sublabel="Need attention"
+          />
+          <AppleStatsCard
+            label="In Progress"
+            value={stats.inProgress}
+            icon={Clock}
+            iconColor="bg-amber-500"
+            sublabel="Being resolved"
+          />
+          <AppleStatsCard
+            label="Resolved"
+            value={stats.resolved}
+            icon={CheckCircle}
+            iconColor="bg-green-500"
+            sublabel="Completed"
+          />
+          <AppleStatsCard
+            label="Urgent"
+            value={stats.urgent}
+            icon={AlertTriangle}
+            iconColor={stats.urgent > 0 ? "bg-red-500" : "bg-green-500"}
+            sublabel="High priority"
+          />
+        </div>
+      )}
 
       {/* Filters + Table */}
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle className="text-base font-semibold">
-              All Complaints ({pagination.total})
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => {
-                  setStatusFilter(v);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-32 h-8 text-sm">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Status</SelectItem>
-                  <SelectItem value="OPEN">Open</SelectItem>
-                  <SelectItem value="ASSIGNED">Assigned</SelectItem>
-                  <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                  <SelectItem value="RESOLVED">Resolved</SelectItem>
-                  <SelectItem value="CLOSED">Closed</SelectItem>
-                </SelectContent>
-              </Select>
+      <div className="apple-card overflow-hidden">
+        <div className="p-5 pb-4 flex items-center justify-between flex-wrap gap-3 border-b border-zinc-100 dark:border-zinc-700/50">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
+            All Complaints
+            {pagination.total > 0 && (
+              <span className="ml-2 text-xs font-normal text-zinc-400">
+                ({pagination.total} total)
+              </span>
+            )}
+          </h3>
 
-              <Select
-                value={priorityFilter}
-                onValueChange={(v) => {
-                  setPriorityFilter(v);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-32 h-8 text-sm">
-                  <SelectValue placeholder="Priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Priority</SelectItem>
-                  <SelectItem value="URGENT">Urgent</SelectItem>
-                  <SelectItem value="HIGH">High</SelectItem>
-                  <SelectItem value="MEDIUM">Medium</SelectItem>
-                  <SelectItem value="LOW">Low</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex items-center gap-2">
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                setStatusFilter(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-32 h-8 text-sm">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Status</SelectItem>
+                <SelectItem value="OPEN">Open</SelectItem>
+                <SelectItem value="ASSIGNED">Assigned</SelectItem>
+                <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                <SelectItem value="RESOLVED">Resolved</SelectItem>
+                <SelectItem value="CLOSED">Closed</SelectItem>
+                <SelectItem value="REJECTED">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={priorityFilter}
+              onValueChange={(v) => {
+                setPriorityFilter(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-32 h-8 text-sm">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Priority</SelectItem>
+                <SelectItem value="URGENT">Urgent</SelectItem>
+                <SelectItem value="HIGH">High</SelectItem>
+                <SelectItem value="MEDIUM">Medium</SelectItem>
+                <SelectItem value="LOW">Low</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        </CardHeader>
+        </div>
 
-        <CardContent>
+        <div className="p-5">
           <DataTable
             data={complaints}
             columns={columns}
@@ -386,6 +409,7 @@ export default function CommitteeComplaintsPage() {
             emptyTitle="No complaints found"
             emptyDescription="All complaints will appear here"
           />
+
           <Pagination
             page={page}
             totalPages={pagination.totalPages}
@@ -396,10 +420,10 @@ export default function CommitteeComplaintsPage() {
             total={pagination.total}
             limit={15}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      {/* Complaint Detail Modal */}
+      {/* ── Complaint Detail Modal ──────────────────────────── */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -408,28 +432,32 @@ export default function CommitteeComplaintsPage() {
 
           {selectedComplaint && (
             <div className="space-y-4">
-              {/* Details */}
-              <div className="rounded-xl bg-zinc-50 border p-4 space-y-3">
+              {/* Complaint Details */}
+              <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 p-4 space-y-3">
                 <div>
                   <p className="text-xs text-muted-foreground">Issue</p>
                   <p className="text-sm font-semibold mt-0.5">
                     {selectedComplaint.title}
                   </p>
                 </div>
+
                 <div>
                   <p className="text-xs text-muted-foreground">Description</p>
-                  <p className="text-sm mt-0.5 text-zinc-700">
+                  <p className="text-sm mt-0.5 text-zinc-700 dark:text-zinc-300">
                     {selectedComplaint.description}
                   </p>
                 </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <p className="text-xs text-muted-foreground">Raised By</p>
                     <p className="text-sm font-medium mt-0.5">
-                      {selectedComplaint.raised_by_user?.full_name}
+                      {selectedComplaint.raised_by_user?.full_name || "Unknown"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Flat {selectedComplaint.raised_by_user?.flat?.flat_number}
+                      Flat{" "}
+                      {selectedComplaint.raised_by_user?.flat?.flat_number ||
+                        "N/A"}
                     </p>
                   </div>
                   <div>
@@ -439,6 +467,16 @@ export default function CommitteeComplaintsPage() {
                     </p>
                   </div>
                 </div>
+
+                {selectedComplaint.location && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Location</p>
+                    <p className="text-sm mt-0.5">
+                      {selectedComplaint.location}
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2">
                   <StatusBadge
                     status={selectedComplaint.priority}
@@ -449,12 +487,31 @@ export default function CommitteeComplaintsPage() {
                     type="complaint-status"
                   />
                 </div>
+
+                {selectedComplaint.assigned_to_user && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Assigned To</p>
+                    <p className="text-sm font-medium mt-0.5">
+                      {selectedComplaint.assigned_to_user.full_name}
+                    </p>
+                  </div>
+                )}
+
+                {selectedComplaint.resolved_at && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Resolved On</p>
+                    <p className="text-sm font-medium mt-0.5 text-green-600">
+                      {formatDateShort(selectedComplaint.resolved_at)}
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {/* Update Status */}
-              {availableStatuses.length > 0 && (
+              {/* Status Update Form */}
+              {availableStatuses.length > 0 ? (
                 <div className="space-y-3">
-                  <Label>Update Status</Label>
+                  <Label className="text-sm font-medium">Update Status</Label>
+
                   <Select
                     value={updateForm.newStatus}
                     onValueChange={(v) =>
@@ -466,7 +523,7 @@ export default function CommitteeComplaintsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={selectedComplaint.status}>
-                        {selectedComplaint.status} (Current)
+                        {selectedComplaint.status.replace(/_/g, " ")} (Current)
                       </SelectItem>
                       {availableStatuses.map((status) => (
                         <SelectItem key={status} value={status}>
@@ -477,7 +534,7 @@ export default function CommitteeComplaintsPage() {
                   </Select>
 
                   <div className="space-y-2">
-                    <Label>Note (Optional)</Label>
+                    <Label className="text-sm">Note (Optional)</Label>
                     <Textarea
                       placeholder="Add a note about this status update..."
                       value={updateForm.note}
@@ -491,13 +548,17 @@ export default function CommitteeComplaintsPage() {
                     />
                   </div>
 
+                  {/* Error */}
                   {updateError && (
-                    <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-                      <p className="text-sm text-red-600">{updateError}</p>
+                    <div className="rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 p-3">
+                      <p className="text-sm text-red-600 dark:text-red-400">
+                        {updateError}
+                      </p>
                     </div>
                   )}
 
-                  <div className="flex gap-3">
+                  {/* Buttons */}
+                  <div className="flex gap-3 pt-1">
                     <Button
                       variant="outline"
                       className="flex-1"
@@ -517,13 +578,12 @@ export default function CommitteeComplaintsPage() {
                     </Button>
                   </div>
                 </div>
-              )}
-
-              {availableStatuses.length === 0 && (
-                <div className="rounded-lg bg-zinc-50 border p-4 text-center">
+              ) : (
+                <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 p-4 text-center">
                   <CheckCircle className="h-6 w-6 text-green-500 mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">
-                    This complaint is {selectedComplaint.status.toLowerCase()}
+                    This complaint is{" "}
+                    {selectedComplaint.status.toLowerCase().replace(/_/g, " ")}
                   </p>
                 </div>
               )}

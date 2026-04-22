@@ -2,15 +2,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import {
   MessageSquare,
   Plus,
-  X,
   AlertTriangle,
   Clock,
   CheckCircle,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,8 +31,8 @@ import {
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { StatsCard } from "@/components/shared/StatsCard";
 import { Pagination } from "@/components/shared/Pagination";
+import { AppleStatsCard } from "@/components/ui/apple-components";
 import { formatDateShort } from "@/lib/utils";
 
 interface Complaint {
@@ -42,13 +41,9 @@ interface Complaint {
   category: string;
   priority: string;
   title: string;
-  description: string;
   status: string;
-  location: string | null;
   created_at: string;
-  resolved_at: string | null;
   assigned_to_user: { full_name: string } | null;
-  updates: any[];
 }
 
 const CATEGORIES = [
@@ -63,7 +58,6 @@ const CATEGORIES = [
   "GAS",
   "OTHER",
 ];
-
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
 export default function ResidentComplaintsPage() {
@@ -78,8 +72,6 @@ export default function ResidentComplaintsPage() {
     hasNext: false,
     hasPrev: false,
   });
-
-  // Form state
   const [form, setForm] = useState({
     category: "",
     priority: "MEDIUM",
@@ -88,8 +80,6 @@ export default function ResidentComplaintsPage() {
     location: "",
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [submitError, setSubmitError] = useState("");
-  const [submitSuccess, setSubmitSuccess] = useState("");
 
   useEffect(() => {
     fetchComplaints();
@@ -98,9 +88,8 @@ export default function ResidentComplaintsPage() {
   const fetchComplaints = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/complaints?page=${page}&limit=10`);
-      const data = await response.json();
-
+      const res = await fetch(`/api/complaints?page=${page}&limit=10`);
+      const data = await res.json();
       if (data.success) {
         setComplaints(data.data || []);
         setPagination({
@@ -110,43 +99,33 @@ export default function ResidentComplaintsPage() {
           hasPrev: data.pagination?.hasPrev || false,
         });
       }
-    } catch (error) {
-      console.error("Failed to fetch complaints:", error);
+    } catch (e) {
+      console.error(e);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const validateForm = () => {
-    const errors: Record<string, string> = {};
-    if (!form.category) errors.category = "Please select a category";
-    if (!form.title || form.title.length < 10)
-      errors.title = "Title must be at least 10 characters";
-    if (!form.description || form.description.length < 20)
-      errors.description = "Description must be at least 20 characters";
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    const errors: Record<string, string> = {};
+    if (!form.category) errors.category = "Required";
+    if (form.title.length < 10) errors.title = "Min 10 characters";
+    if (form.description.length < 20) errors.description = "Min 20 characters";
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
 
     setIsSubmitting(true);
-    setSubmitError("");
-    setSubmitSuccess("");
-
     try {
-      const response = await fetch("/api/complaints", {
+      const res = await fetch("/api/complaints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-
-      const data = await response.json();
-
+      const data = await res.json();
       if (data.success) {
-        setSubmitSuccess(data.message);
+        toast.success(data.message);
+        setShowForm(false);
         setForm({
           category: "",
           priority: "MEDIUM",
@@ -154,25 +133,23 @@ export default function ResidentComplaintsPage() {
           description: "",
           location: "",
         });
-        setShowForm(false);
-        fetchComplaints(); // Refresh list
+        fetchComplaints();
       } else {
-        setSubmitError(data.message || "Failed to submit complaint");
+        toast.error(data.message);
       }
     } catch {
-      setSubmitError("Network error. Please try again.");
+      toast.error("Network error");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Stats
   const openCount = complaints.filter((c) => c.status === "OPEN").length;
-  const inProgressCount = complaints.filter(
-    (c) => c.status === "IN_PROGRESS" || c.status === "ASSIGNED",
+  const inProgressCount = complaints.filter((c) =>
+    ["IN_PROGRESS", "ASSIGNED"].includes(c.status),
   ).length;
-  const resolvedCount = complaints.filter(
-    (c) => c.status === "RESOLVED" || c.status === "CLOSED",
+  const resolvedCount = complaints.filter((c) =>
+    ["RESOLVED", "CLOSED"].includes(c.status),
   ).length;
 
   const columns = [
@@ -187,12 +164,12 @@ export default function ResidentComplaintsPage() {
     },
     {
       key: "title",
-      label: "Complaint",
+      label: "Issue",
       render: (c: Complaint) => (
         <div>
           <p className="text-sm font-medium line-clamp-1">{c.title}</p>
           <p className="text-xs text-muted-foreground capitalize">
-            {c.category.toLowerCase()} • {formatDateShort(c.created_at)}
+            {c.category.toLowerCase()} · {formatDateShort(c.created_at)}
           </p>
         </div>
       ),
@@ -212,20 +189,11 @@ export default function ResidentComplaintsPage() {
       ),
     },
     {
-      key: "assigned_to",
+      key: "assigned",
       label: "Assigned To",
       render: (c: Complaint) => (
         <span className="text-sm text-muted-foreground">
           {c.assigned_to_user?.full_name || "—"}
-        </span>
-      ),
-    },
-    {
-      key: "resolved_at",
-      label: "Resolved",
-      render: (c: Complaint) => (
-        <span className="text-sm text-muted-foreground">
-          {c.resolved_at ? formatDateShort(c.resolved_at) : "—"}
         </span>
       ),
     },
@@ -235,65 +203,51 @@ export default function ResidentComplaintsPage() {
     <div className="space-y-6">
       <PageHeader
         title="My Complaints"
-        description="Raise and track your complaints"
+        description="Raise and track complaints"
         icon={MessageSquare}
         action={
-          <Button onClick={() => setShowForm(true)} size="sm">
+          <Button size="sm" onClick={() => setShowForm(true)}>
             <Plus className="h-4 w-4 mr-2" />
             New Complaint
           </Button>
         }
       />
 
-      {/* Success message */}
-      {submitSuccess && (
-        <div className="rounded-lg bg-green-50 border border-green-200 p-4">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <p className="text-sm font-medium text-green-800">
-              {submitSuccess}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
-        <StatsCard
-          title="Open"
+        <AppleStatsCard
+          label="Open"
           value={openCount}
           icon={AlertTriangle}
-          color={openCount > 0 ? "red" : "green"}
+          iconColor={openCount > 0 ? "bg-red-500" : "bg-green-500"}
         />
-        <StatsCard
-          title="In Progress"
+        <AppleStatsCard
+          label="In Progress"
           value={inProgressCount}
           icon={Clock}
-          color="yellow"
+          iconColor="bg-amber-500"
         />
-        <StatsCard
-          title="Resolved"
+        <AppleStatsCard
+          label="Resolved"
           value={resolvedCount}
           icon={CheckCircle}
-          color="green"
+          iconColor="bg-green-500"
         />
       </div>
 
-      {/* Complaints Table */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base font-semibold">
+      <div className="apple-card overflow-hidden">
+        <div className="p-5 pb-4 border-b border-zinc-100 dark:border-zinc-700/50">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
             All Complaints ({pagination.total})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+          </h3>
+        </div>
+        <div className="p-5">
           <DataTable
             data={complaints}
             columns={columns}
             isLoading={isLoading}
             keyExtractor={(c) => c.id}
             emptyTitle="No complaints yet"
-            emptyDescription="Raise a complaint if you face any issues in the society"
+            emptyDescription="Raise a complaint if you face any issues"
           />
           <Pagination
             page={page}
@@ -305,21 +259,16 @@ export default function ResidentComplaintsPage() {
             total={pagination.total}
             limit={10}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      {/* New Complaint Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Raise a Complaint</DialogTitle>
-            <DialogDescription>
-              Describe your issue and we'll get it resolved
-            </DialogDescription>
+            <DialogDescription>Describe your issue clearly</DialogDescription>
           </DialogHeader>
-
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            {/* Category + Priority Row */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Category *</Label>
@@ -328,12 +277,12 @@ export default function ResidentComplaintsPage() {
                   onValueChange={(v) => setForm({ ...form, category: v })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
+                    <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat.charAt(0) + cat.slice(1).toLowerCase()}
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c.charAt(0) + c.slice(1).toLowerCase()}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -342,7 +291,6 @@ export default function ResidentComplaintsPage() {
                   <p className="text-xs text-red-500">{formErrors.category}</p>
                 )}
               </div>
-
               <div className="space-y-2">
                 <Label>Priority</Label>
                 <Select
@@ -362,59 +310,39 @@ export default function ResidentComplaintsPage() {
                 </Select>
               </div>
             </div>
-
-            {/* Title */}
             <div className="space-y-2">
               <Label>Title *</Label>
               <Input
-                placeholder="Brief description of the issue"
+                placeholder="Brief description"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                maxLength={300}
               />
               {formErrors.title && (
                 <p className="text-xs text-red-500">{formErrors.title}</p>
               )}
             </div>
-
-            {/* Description */}
             <div className="space-y-2">
               <Label>Description *</Label>
               <Textarea
-                placeholder="Provide detailed description of the problem..."
+                placeholder="Detailed description..."
                 value={form.description}
                 onChange={(e) =>
                   setForm({ ...form, description: e.target.value })
                 }
                 rows={4}
-                maxLength={2000}
               />
-              <p className="text-xs text-muted-foreground text-right">
-                {form.description.length}/2000
-              </p>
               {formErrors.description && (
                 <p className="text-xs text-red-500">{formErrors.description}</p>
               )}
             </div>
-
-            {/* Location */}
             <div className="space-y-2">
-              <Label>Location (Optional)</Label>
+              <Label>Location</Label>
               <Input
-                placeholder="e.g. Lobby, Parking area, Floor 3"
+                placeholder="e.g. Lobby, Floor 3"
                 value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
               />
             </div>
-
-            {/* Error */}
-            {submitError && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-                <p className="text-sm text-red-600">{submitError}</p>
-              </div>
-            )}
-
-            {/* Buttons */}
             <div className="flex gap-3 pt-2">
               <Button
                 type="button"
