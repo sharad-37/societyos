@@ -27,7 +27,7 @@ import {
   AppleStatsCard,
   AppleCardSkeleton,
 } from "@/components/ui/apple-components";
-import { PaymentModal } from "@/components/billing/PaymentModal";
+import { RazorpayPayment } from "@/components/billing/RazorpayPayment";
 import { generateReceiptPDF } from "@/lib/receipt-pdf";
 import { formatINR, formatDateShort, getDaysUntilDue } from "@/lib/utils";
 
@@ -381,7 +381,7 @@ export default function ResidentBillsPage() {
       </div>
 
       {/* Payment Modal */}
-      <PaymentModal
+      <RazorpayPayment
         bill={selectedBill}
         open={showPayModal}
         onClose={() => {
