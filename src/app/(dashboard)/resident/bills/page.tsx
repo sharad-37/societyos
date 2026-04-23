@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import {
   CreditCard,
   Download,
@@ -9,7 +10,6 @@ import {
   CheckCircle,
   Clock,
   AlertTriangle,
-  Filter,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,8 +27,11 @@ import {
   AppleStatsCard,
   AppleCardSkeleton,
 } from "@/components/ui/apple-components";
+import { PaymentModal } from "@/components/billing/PaymentModal";
+import { generateReceiptPDF } from "@/lib/receipt-pdf";
 import { formatINR, formatDateShort, getDaysUntilDue } from "@/lib/utils";
 
+// ─── Types ────────────────────────────────────────────────────
 interface Bill {
   id: string;
   bill_number: string;
@@ -42,9 +45,16 @@ interface Bill {
   due_date: string;
   paid_at: string | null;
   flat: { flat_number: string; wing: string | null } | null;
-  payments: any[];
+  payments: {
+    id: string;
+    payment_method: string;
+    transaction_id: string | null;
+    upi_ref_number: string | null;
+    payment_status: string;
+  }[];
 }
 
+// ─── Constants ────────────────────────────────────────────────
 const MONTHS = [
   "January",
   "February",
@@ -60,7 +70,9 @@ const MONTHS = [
   "December",
 ];
 
+// ─── Component ────────────────────────────────────────────────
 export default function ResidentBillsPage() {
+  // ── State ──────────────────────────────────────────────────
   const [bills, setBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -77,10 +89,16 @@ export default function ResidentBillsPage() {
     totalOverdue: 0,
   });
 
+  // Payment modal state
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
+
+  // ── Effects ────────────────────────────────────────────────
   useEffect(() => {
     fetchBills();
   }, [statusFilter, page]);
 
+  // ── Fetch ──────────────────────────────────────────────────
   const fetchBills = async () => {
     setIsLoading(true);
     try {
@@ -89,8 +107,10 @@ export default function ResidentBillsPage() {
         limit: "10",
         ...(statusFilter !== "ALL" && { status: statusFilter }),
       });
+
       const res = await fetch(`/api/billing?${params}`);
       const data = await res.json();
+
       if (data.success) {
         const all: Bill[] = data.data || [];
         setBills(all);
@@ -114,30 +134,56 @@ export default function ResidentBillsPage() {
       }
     } catch (e) {
       console.error(e);
+      toast.error("Failed to load bills");
     } finally {
       setIsLoading(false);
     }
   };
 
+  // ── Handlers ───────────────────────────────────────────────
   const handlePayNow = (bill: Bill) => {
-    const upiLink = `upi://pay?pa=society@upi&am=${Number(bill.total_amount)}&tn=${bill.bill_number}&cu=INR`;
-    window.open(upiLink, "_blank");
-    alert(
-      `Pay ${formatINR(Number(bill.total_amount))} for ${bill.bill_number}\n\nShare payment screenshot with treasurer.`,
-    );
+    setSelectedBill(bill);
+    setShowPayModal(true);
   };
 
-  const handleDownload = (bill: Bill) => {
-    const text = `SOCIETYOS RECEIPT\nBill: ${bill.bill_number}\nAmount: ${formatINR(Number(bill.amount_paid))}\nStatus: PAID\nPaid: ${bill.paid_at ? formatDateShort(bill.paid_at) : "N/A"}`;
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `receipt-${bill.bill_number}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleDownloadReceipt = async (bill: Bill) => {
+    try {
+      const receiptNumber = `RCP-${bill.billing_year}-${String(
+        bill.billing_month,
+      ).padStart(2, "0")}-${bill.id.slice(0, 6).toUpperCase()}`;
+
+      const confirmedPayment = bill.payments?.find(
+        (p) => p.payment_status === "CONFIRMED",
+      );
+
+      await generateReceiptPDF({
+        receiptNumber,
+        billNumber: bill.bill_number,
+        residentName: "Resident",
+        flatNumber: bill.flat?.wing
+          ? `${bill.flat.wing}-${bill.flat.flat_number}`
+          : bill.flat?.flat_number || "N/A",
+        societyName: "Sunshine Apartments CHS",
+        billingMonth: MONTHS[bill.billing_month - 1],
+        billingYear: bill.billing_year,
+        amount: Number(bill.amount),
+        lateFee: Number(bill.late_fee),
+        totalAmount: Number(bill.total_amount),
+        paymentMethod: confirmedPayment?.payment_method || "UPI",
+        paymentDate: bill.paid_at || new Date().toISOString(),
+        transactionId: confirmedPayment?.transaction_id || undefined,
+        upiRefNumber: confirmedPayment?.upi_ref_number || undefined,
+        status: bill.status,
+      });
+
+      toast.success("PDF receipt downloaded! 📄");
+    } catch (error) {
+      console.error("PDF error:", error);
+      toast.error("Failed to generate PDF");
+    }
   };
 
+  // ── Table Columns ──────────────────────────────────────────
   const columns = [
     {
       key: "bill_number",
@@ -167,7 +213,7 @@ export default function ResidentBillsPage() {
           </p>
           {Number(b.late_fee) > 0 && (
             <p className="text-xs text-red-500">
-              +{formatINR(Number(b.late_fee))} late
+              +{formatINR(Number(b.late_fee))} late fee
             </p>
           )}
         </div>
@@ -177,15 +223,27 @@ export default function ResidentBillsPage() {
       key: "due_date",
       label: "Due Date",
       render: (b: Bill) => {
-        const d = getDaysUntilDue(b.due_date);
+        const daysLeft = getDaysUntilDue(b.due_date);
+        const isOverdue = daysLeft < 0;
+        const isDueSoon = daysLeft >= 0 && daysLeft <= 5;
+
         return (
           <div>
             <p className="text-sm">{formatDateShort(b.due_date)}</p>
-            {b.status === "PENDING" && d < 0 && (
-              <p className="text-xs text-red-500">{Math.abs(d)}d overdue</p>
+            {b.status === "PENDING" && isOverdue && (
+              <p className="text-xs text-red-500 font-medium">
+                {Math.abs(daysLeft)}d overdue
+              </p>
             )}
-            {b.status === "PENDING" && d >= 0 && d <= 5 && (
-              <p className="text-xs text-orange-500">{d}d left</p>
+            {b.status === "PENDING" && isDueSoon && !isOverdue && (
+              <p className="text-xs text-amber-500 font-medium">
+                {daysLeft}d left
+              </p>
+            )}
+            {b.status === "PAID" && b.paid_at && (
+              <p className="text-xs text-green-600">
+                Paid {formatDateShort(b.paid_at)}
+              </p>
             )}
           </div>
         );
@@ -200,7 +258,7 @@ export default function ResidentBillsPage() {
       key: "actions",
       label: "Action",
       render: (b: Bill) => (
-        <div className="flex gap-1">
+        <div className="flex items-center gap-2">
           {(b.status === "PENDING" || b.status === "OVERDUE") && (
             <Button
               size="sm"
@@ -215,7 +273,7 @@ export default function ResidentBillsPage() {
               size="sm"
               variant="outline"
               className="h-7 text-xs"
-              onClick={() => handleDownload(b)}
+              onClick={() => handleDownloadReceipt(b)}
             >
               <Download className="h-3 w-3 mr-1" />
               Receipt
@@ -226,14 +284,17 @@ export default function ResidentBillsPage() {
     },
   ];
 
+  // ── Render ─────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+      {/* Header */}
       <PageHeader
         title="My Bills"
-        description="View and pay maintenance bills"
+        description="View and pay your maintenance bills"
         icon={CreditCard}
       />
 
+      {/* Stats */}
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           {[...Array(3)].map((_, i) => (
@@ -247,27 +308,36 @@ export default function ResidentBillsPage() {
             value={formatINR(stats.totalPaid)}
             icon={CheckCircle}
             iconColor="bg-green-500"
+            sublabel="Cleared"
           />
           <AppleStatsCard
             label="Pending"
             value={formatINR(stats.totalPending)}
             icon={Clock}
             iconColor="bg-amber-500"
+            sublabel="Due soon"
           />
           <AppleStatsCard
             label="Overdue"
             value={formatINR(stats.totalOverdue)}
             icon={AlertTriangle}
             iconColor={stats.totalOverdue > 0 ? "bg-red-500" : "bg-green-500"}
+            sublabel={stats.totalOverdue > 0 ? "Pay immediately" : "All clear!"}
             className="col-span-2 sm:col-span-1"
           />
         </div>
       )}
 
+      {/* Bills Table */}
       <div className="apple-card overflow-hidden">
         <div className="p-5 pb-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700/50">
           <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
             All Bills
+            {pagination.total > 0 && (
+              <span className="ml-2 text-xs font-normal text-zinc-400">
+                ({pagination.total} total)
+              </span>
+            )}
           </h3>
           <Select
             value={statusFilter}
@@ -287,6 +357,7 @@ export default function ResidentBillsPage() {
             </SelectContent>
           </Select>
         </div>
+
         <div className="p-5">
           <DataTable
             data={bills}
@@ -294,7 +365,7 @@ export default function ResidentBillsPage() {
             isLoading={isLoading}
             keyExtractor={(b) => b.id}
             emptyTitle="No bills found"
-            emptyDescription="Bills will appear here once generated"
+            emptyDescription="Your bills will appear here once generated"
           />
           <Pagination
             page={page}
@@ -308,6 +379,21 @@ export default function ResidentBillsPage() {
           />
         </div>
       </div>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        bill={selectedBill}
+        open={showPayModal}
+        onClose={() => {
+          setShowPayModal(false);
+          setSelectedBill(null);
+        }}
+        onSuccess={() => {
+          fetchBills();
+          setShowPayModal(false);
+          setSelectedBill(null);
+        }}
+      />
     </div>
   );
 }

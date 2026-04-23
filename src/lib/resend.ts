@@ -272,7 +272,96 @@ function generateOTPEmailHTML(
     </html>
   `;
 }
+// ─── Send Receipt Email ───────────────────────────────────────
+export async function sendReceiptEmail(
+  email: string,
+  data: {
+    receiptNumber: string;
+    billNumber: string;
+    residentName: string;
+    flatNumber: string;
+    amount: number;
+    lateFee: number;
+    totalAmount: number;
+    paymentMethod: string;
+    paymentDate: string;
+    billingMonth: string;
+    billingYear: number;
+  },
+): Promise<boolean> {
+  try {
+    const recipient = getActualRecipient(email);
 
+    const { error } = await resend.emails.send({
+      from: `${APP_NAME} <${FROM_EMAIL}>`,
+      to: [recipient],
+      subject: `✅ Payment Receipt ${data.receiptNumber} — SocietyOS`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: -apple-system, sans-serif; background: #f5f5f7; margin: 0; padding: 24px;">
+          <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
+            <div style="background: #1c1c1e; padding: 28px 32px; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 20px; font-weight: 700;">
+                🏢 SocietyOS
+              </h1>
+              <p style="color: #8e8e93; margin: 6px 0 0; font-size: 13px;">Payment Receipt</p>
+            </div>
+            <div style="padding: 32px;">
+              <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 20px; text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 36px; margin-bottom: 8px;">✅</div>
+                <p style="color: #166534; font-weight: 700; font-size: 18px; margin: 0;">Payment Confirmed!</p>
+                <p style="color: #166534; font-size: 28px; font-weight: 800; margin: 8px 0 0;">
+                  Rs. ${data.totalAmount.toLocaleString("en-IN")}
+                </p>
+              </div>
+              <table style="width: 100%; border-collapse: collapse;">
+                ${[
+                  ["Receipt No.", data.receiptNumber],
+                  ["Bill Number", data.billNumber],
+                  ["Resident", data.residentName],
+                  ["Flat", data.flatNumber],
+                  ["Period", `${data.billingMonth} ${data.billingYear}`],
+                  ["Method", data.paymentMethod.replace(/_/g, " ")],
+                  [
+                    "Date",
+                    new Date(data.paymentDate).toLocaleDateString("en-IN", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    }),
+                  ],
+                ]
+                  .map(
+                    ([label, value], i) => `
+                  <tr style="border-bottom: 1px solid ${i % 2 === 0 ? "#f2f2f7" : "#fff"};">
+                    <td style="padding: 10px 0; color: #6e6e73; font-size: 13px;">${label}</td>
+                    <td style="padding: 10px 0; font-weight: 600; text-align: right; font-size: 13px;">${value}</td>
+                  </tr>
+                `,
+                  )
+                  .join("")}
+              </table>
+              <div style="background: #f5f5f7; border-radius: 12px; padding: 14px; margin-top: 20px; text-align: center;">
+                <p style="color: #6e6e73; font-size: 12px; margin: 0;">
+                  📄 Download your detailed PDF receipt from the SocietyOS app
+                </p>
+              </div>
+            </div>
+            <div style="border-top: 1px solid #e5e5ea; padding: 16px; text-align: center;">
+              <p style="color: #8e8e93; font-size: 11px; margin: 0;">© 2024 SocietyOS. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    });
+
+    return !error;
+  } catch {
+    return false;
+  }
+}
 // ─── Bill Email Template ──────────────────────────────────────
 function generateBillEmailHTML(data: {
   userName: string;
